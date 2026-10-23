@@ -1,6 +1,6 @@
-# Omarchy Peripheral Battery: let the logged-in user read battery reports
+# Omarchy Batteries: let the logged-in user read battery reports
 # from mice and headsets whose battery the kernel and UPower cannot see.
-# Installed by `bin/peripheral-battery install-udev`. Replug devices after.
+# Installed by `bin/batteries install-udev`. Replug devices after.
 #
 # uaccess grants access to the active seat's user only, so this must sort
 # before 73-seat-late.rules.

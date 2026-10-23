@@ -3,9 +3,9 @@ import Quickshell
 import Quickshell.Io
 import "Model.js" as Model
 
-// Owns polling and state. All device I/O happens in bin/peripheral-battery;
-// this side schedules it, remembers the last level of sleeping devices, and
-// sends low-battery notifications.
+// Owns polling and state. All reading happens in bin/batteries; this side
+// schedules it, remembers the last levels of sleeping devices, and sends
+// low-battery notifications.
 Item {
   id: root
   visible: false
@@ -13,8 +13,12 @@ Item {
   property int intervalSec: 30
   property int lowThreshold: 20
   property bool notifyLow: true
+  // Watts and time left move constantly, so poll faster while they show.
+  property bool liveBar: false
   property int openPanels: 0
 
+  property var laptop: null
+  property var airpods: null
   property var devices: []
   property var needsAccess: []
   property bool udevInstalled: false
@@ -24,12 +28,16 @@ Item {
   property real lastPollMs: 0
   property bool pollAgain: false
 
-  readonly property string scriptPath: decodeURIComponent(Qt.resolvedUrl("bin/peripheral-battery").toString().replace(/^file:\/\//, ""))
+  readonly property var state: ({ laptop: laptop, airpods: airpods, devices: devices })
+  readonly property string scriptPath: decodeURIComponent(Qt.resolvedUrl("bin/batteries").toString().replace(/^file:\/\//, ""))
+  readonly property string podsStatePath: (Quickshell.env("XDG_STATE_HOME")
+    || Quickshell.env("HOME") + "/.local/state") + "/librepods/status.json"
 
   PersistentProperties {
     id: persisted
-    reloadableId: "io.github.t3lluz.peripheral-battery"
+    reloadableId: "io.github.t3lluz.batteries"
     property var lastDevices: []
+    property var lastAirpods: null
     property var notified: ({})
   }
 
@@ -47,26 +55,30 @@ Item {
   function handleProbe(out, err) {
     var parsed = Model.parseProbe(out)
     if (!parsed) {
-      errorText = String(err || "").trim().split("\n").pop() || "peripheral-battery gave no answer"
+      errorText = String(err || "").trim().split("\n").pop() || "bin/batteries gave no answer"
       loaded = true
       return
     }
     errorText = ""
     var next = Model.withLastKnown(parsed.devices, persisted.lastDevices)
+    var pods = Model.airpodsWithLastKnown(parsed.airpods, persisted.lastAirpods)
     devices = next
+    airpods = pods
+    laptop = parsed.laptop
     persisted.lastDevices = next
+    if (pods && pods.known) persisted.lastAirpods = pods
     needsAccess = parsed.needsAccess
     udevInstalled = parsed.udevInstalled
     lastPollMs = Date.now()
     loaded = true
 
-    var low = Model.lowBatteryAlerts(next, lowThreshold, persisted.notified || {})
+    var low = Model.lowBatteryAlerts(Model.alertables(root.state), lowThreshold, persisted.notified || {})
     persisted.notified = low.notified
     if (notifyLow) {
       for (var i = 0; i < low.alerts.length; i++) {
         var d = low.alerts[i]
-        Quickshell.execDetached(["notify-send", "-u", "critical", "-a", "Peripheral Battery",
-          "-i", "battery-caution", Model.kindLabel(d.kind) + " battery low",
+        Quickshell.execDetached(["notify-send", "-u", "critical", "-a", "Batteries",
+          "-i", "battery-caution", (d.kind === "airpods" ? "AirPods" : Model.kindLabel(d.kind)) + " battery low",
           d.name + " is at " + Model.percent(d.level) + ". Plug it in."])
       }
     }
@@ -77,12 +89,12 @@ Item {
   Timer {
     running: true
     repeat: true
-    interval: (root.openPanels > 0 ? 5 : Math.max(5, root.intervalSec)) * 1000
+    interval: (root.openPanels > 0 ? 5 : root.liveBar ? Math.min(10, root.intervalSec) : Math.max(5, root.intervalSec)) * 1000
     onTriggered: root.pollNow()
   }
 
-  // Plugging the cable in or out, or a Bluetooth device coming and going,
-  // re-polls right away so the charging bolt follows the cable.
+  // Plugging a cable or the charger in or out, or a Bluetooth device coming
+  // and going, re-polls right away so the bolt follows the cable.
   Process {
     id: udevWatch
     running: true
@@ -103,6 +115,20 @@ Item {
   Timer {
     id: hotplugDebounce
     interval: 1500
+    onTriggered: root.pollNow()
+  }
+
+  // librepods rewrites its status file whenever the AirPods change.
+  FileView {
+    path: root.podsStatePath
+    watchChanges: true
+    printErrors: false
+    onFileChanged: podsDebounce.restart()
+  }
+
+  Timer {
+    id: podsDebounce
+    interval: 400
     onTriggered: root.pollNow()
   }
 

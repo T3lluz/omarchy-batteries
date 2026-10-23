@@ -1,12 +1,14 @@
 # Run with: python3 -m unittest discover tests
 import importlib.machinery
 import importlib.util
+import json
 import os
+import tempfile
 import unittest
 
-_path = os.path.join(os.path.dirname(__file__), "..", "bin", "peripheral-battery")
-_loader = importlib.machinery.SourceFileLoader("peripheral_battery", _path)
-_spec = importlib.util.spec_from_loader("peripheral_battery", _loader)
+_path = os.path.join(os.path.dirname(__file__), "..", "bin", "batteries")
+_loader = importlib.machinery.SourceFileLoader("batteries", _path)
+_spec = importlib.util.spec_from_loader("batteries", _loader)
 pb = importlib.util.module_from_spec(_spec)
 _loader.exec_module(pb)
 
@@ -180,6 +182,109 @@ class OtherParsersTest(unittest.TestCase):
         a = {"name": "HyperX Cloud Alpha Wireless", "source": "hyperx"}
         b = {"name": "HyperX Cloud Alpha  wireless", "source": "headsetcontrol"}
         self.assertEqual(pb.merge([[a], [b]]), [a])
+
+
+def write_supply(root, name, **files):
+    d = os.path.join(root, name)
+    os.makedirs(d)
+    for k, v in files.items():
+        with open(os.path.join(d, k), "w") as f:
+            f.write(str(v) + "\n")
+
+
+class LaptopTest(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+
+    def bat(self, **over):
+        files = dict(type="Battery", status="Discharging", energy_now=30000000, energy_full=60000000,
+                     energy_full_design=80000000, power_now=15000000, voltage_now=16000000, cycle_count=42)
+        files.update(over)
+        write_supply(self.root, "BAT0", **files)
+
+    def test_discharging(self):
+        self.bat()
+        write_supply(self.root, "ADP0", type="Mains", online=0)
+        lap = pb.laptop({}, self.root)
+        self.assertEqual((lap["level"], lap["status"], lap["rateW"], lap["timeToEmpty"]), (50, "discharging", 15.0, 7200))
+        self.assertEqual((lap["health"], lap["cycles"], lap["acOnline"]), (75, 42, False))
+
+    def test_upower_time_wins(self):
+        self.bat()
+        lap = pb.laptop({"BAT0": {"timeToEmpty": 6000}}, self.root)
+        self.assertEqual(lap["timeToEmpty"], 6000)
+
+    def test_charging_to_limit(self):
+        self.bat(status="Charging", charge_control_end_threshold=80)
+        write_supply(self.root, "ADP0", type="Mains", online=1)
+        lap = pb.laptop({}, self.root)
+        # 30 Wh now, 48 Wh at the 80% limit, at 15 W: 72 minutes.
+        self.assertEqual((lap["status"], lap["charging"], lap["timeToFull"], lap["chargeLimit"]), ("charging", True, 4320, 80))
+
+    def test_held_at_limit(self):
+        self.bat(status="Not charging", energy_now=54000000, power_now=0, charge_control_end_threshold=90)
+        write_supply(self.root, "ADP0", type="Mains", online=1)
+        lap = pb.laptop({}, self.root)
+        self.assertEqual((lap["level"], lap["status"], lap["rateW"]), (90, "held", 0.0))
+
+    def test_charge_units(self):
+        write_supply(self.root, "BAT0", type="Battery", status="Discharging", charge_now=2000000,
+                     charge_full=4000000, charge_full_design=5000000, current_now=1000000, voltage_now=12000000)
+        lap = pb.laptop({}, self.root)
+        self.assertEqual((lap["level"], lap["rateW"], lap["health"]), (50, 12.0, 80))
+
+    def test_device_scope_is_not_the_laptop(self):
+        write_supply(self.root, "hidpp_battery_0", type="Battery", scope="Device", capacity=50)
+        self.assertIsNone(pb.laptop({}, self.root))
+
+    def test_upower_times(self):
+        dump = "Device: /org/freedesktop/UPower/devices/battery_BAT0\n  native-path:          BAT0\n  power supply:         yes\n  battery\n    time to empty:       3.5 hours\n"
+        self.assertEqual(pb.parse_upower_battery_times(dump), {"BAT0": {"timeToEmpty": 12600}})
+
+
+class AirPodsTest(unittest.TestCase):
+    def status(self, **over):
+        s = {"schema_version": 1, "connected": True, "device_name": "AirPods Pro", "model_name": "AirPods Pro 2 (USB-C)",
+             "is_pro_series": True, "is_headset": False,
+             "left": {"available": True, "level": 80, "charging": False, "in_ear": True},
+             "right": {"available": True, "level": 65, "charging": False, "in_ear": False},
+             "case": {"available": True, "level": 40, "charging": True},
+             "headset": {"available": False, "level": 0, "charging": False}}
+        s.update(over)
+        return json.dumps(s)
+
+    def test_buds_and_case(self):
+        p = pb.parse_librepods(self.status())
+        self.assertEqual((p["level"], p["charging"], p["known"], p["connected"]), (65, False, True, True))
+        self.assertEqual(p["left"], {"level": 80, "charging": False, "inEar": True})
+        self.assertEqual(p["case"], {"level": 40, "charging": True})
+
+    def test_unavailable_parts_are_none(self):
+        off = {"available": False, "level": 0, "charging": False, "in_ear": False}
+        p = pb.parse_librepods(self.status(connected=False, left=off, right=off, case=off))
+        self.assertEqual((p["level"], p["known"], p["left"]), (None, False, None))
+
+    def test_max(self):
+        p = pb.parse_librepods(self.status(is_headset=True, headset={"available": True, "level": 55, "charging": True}))
+        self.assertEqual((p["level"], p["charging"], p["isHeadset"]), (55, True, True))
+
+    def test_not_librepods(self):
+        self.assertIsNone(pb.parse_librepods("{}"))
+        self.assertIsNone(pb.parse_librepods(""))
+
+    def test_airpods_win_over_bluez(self):
+        bluez = {"name": "AirPods Pro", "source": "upower"}
+        self.assertEqual(pb.merge([[bluez]], ("AirPods Pro",)), [])
+
+
+class PhoneTest(unittest.TestCase):
+    def test_kdeconnect(self):
+        self.assertEqual(pb.parse_kdeconnect_battery("({'charge': <85>, 'isCharging': <true>},)"), (85, True))
+        self.assertEqual(pb.parse_kdeconnect_battery("({'charge': <-1>},)"), (None, False))
+
+    def test_ideviceinfo(self):
+        self.assertEqual(pb.parse_ideviceinfo("BatteryCurrentCapacity: 77\nBatteryIsCharging: true\n"),
+                         {"BatteryCurrentCapacity": "77", "BatteryIsCharging": "true"})
 
 
 if __name__ == "__main__":

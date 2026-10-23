@@ -6,31 +6,47 @@ import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Every battery-powered peripheral with its level, charging state and link.
-// Click a device to show it in the bar.
+// Every battery: the laptop with its draw, time left and health, AirPods bud
+// by bud, and each peripheral. The gear picks what the bar shows.
 Panel {
   id: root
-  moduleName: "io.github.t3lluz.peripheral-battery"
+  moduleName: "io.github.t3lluz.batteries"
   manageIpc: false
 
   property var anchorItem: null
   property var hostWidget: null
   property var client: null
   property bool setupOpen: false
-  property int cursor: -1
 
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color accent: Commons.Color.accent
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
+  readonly property color track: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.12)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
+  readonly property var laptop: client ? client.laptop : null
+  readonly property var airpods: client ? client.airpods : null
   readonly property var devices: client ? client.devices : []
-  readonly property var primary: hostWidget ? hostWidget.primary : null
   readonly property int lowThreshold: hostWidget ? hostWidget.lowThreshold : 20
   readonly property bool needsAccess: !!client && client.needsAccess.length > 0
+  readonly property var barDevices: Array.isArray(settings ? settings.barDevices : null) ? settings.barDevices : null
 
   readonly property var thresholds: [5, 10, 15, 20, 25, 30]
+
+  readonly property var barOptions: {
+    var opts = []
+    if (laptop) {
+      opts.push({ key: "barLaptop", icon: "device-laptop", label: "Laptop battery", fallback: true })
+      opts.push({ key: "barLaptopRate", icon: "bolt", label: "Laptop charge or discharge rate", fallback: false })
+      opts.push({ key: "barLaptopTime", icon: "clock-hour-4", label: "Laptop time left or to full", fallback: false })
+    }
+    if (airpods) {
+      opts.push({ key: "barAirpods", icon: "device-airpods", label: airpods.name + " (the emptier bud)", fallback: true })
+      if (!airpods.isHeadset) opts.push({ key: "barAirpodsCase", icon: "device-airpods-case", label: airpods.name + " case", fallback: false })
+    }
+    return opts
+  }
 
   function open() { root.controller.show() }
   function close() { root.controller.hide() }
@@ -40,28 +56,48 @@ Panel {
       hostWidget.persistSettings(({ [key]: value }))
   }
 
-  function choose(device) {
-    if (device) setOption("device", device.id)
+  function toggleDevice(device) {
+    setOption("barDevices", Model.toggleBarDevice(barDevices, device.id, devices))
+  }
+
+  function levelColor(item) {
+    if (Model.isLow(item, lowThreshold) && !item.stale) return urgent
+    if (item.stale) return dim
+    return foreground
   }
 
   function heroMeta() {
-    if (!client || !client.loaded) return "Looking for devices…"
+    if (!client || !client.loaded) return "Reading batteries…"
     if (client.errorText) return client.errorText
-    if (!primary) return "No battery-powered peripherals found"
-    return Model.subtitle(primary)
-  }
-
-  function levelColor(device) {
-    if (Model.isLow(device, lowThreshold)) return urgent
-    if (device.charging) return accent
-    return foreground
+    var parts = []
+    if (laptop) parts.push("Laptop " + Model.percent(laptop.level))
+    if (airpods && airpods.known && !airpods.stale) parts.push("AirPods " + Model.percent(airpods.level))
+    for (var i = 0; i < devices.length && parts.length < 4; i++) parts.push(Model.kindLabel(devices[i].kind) + " " + Model.percent(devices[i].level))
+    return parts.length ? parts.join(" · ") : "No batteries found"
   }
 
   onOpenedChanged: {
     if (!opened) { setupOpen = false; return }
-    cursor = -1
     if (client) client.pollNow()
+    if (panelFlick) panelFlick.contentY = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  // A level bar: a track and a fill, urgent when low.
+  component LevelBar: Rectangle {
+    property real level: 0
+    property color fill: root.foreground
+    height: Math.max(3, Style.space(4))
+    radius: height / 2
+    color: root.track
+
+    Rectangle {
+      width: parent.width * Math.max(0, Math.min(100, parent.level || 0)) / 100
+      height: parent.height
+      radius: parent.radius
+      color: parent.fill
+      Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+    }
   }
 
   KeyboardPanel {
@@ -71,19 +107,12 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(340))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(640))
+    contentWidth: panel.fittedContentWidth(Style.space(360))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      onMoveRequested: function(dx, dy) {
-        var n = root.devices.length
-        if (n === 0) return
-        var d = dy !== 0 ? dy : dx
-        root.cursor = root.cursor < 0 ? (d > 0 ? 0 : n - 1) : Math.max(0, Math.min(n - 1, root.cursor + d))
-      }
-      onActivateRequested: if (root.cursor >= 0) root.choose(root.devices[root.cursor])
       onCloseRequested: root.close()
       onTabRequested: function(direction) {
         if (root.bar && typeof root.bar.switchPanelFrom === "function") root.bar.switchPanelFrom(root.hostWidget || root, direction)
@@ -111,34 +140,15 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: root.primary ? root.primary.name : "Peripheral Battery"
+            title: "Batteries"
             meta: root.heroMeta()
-            detail: root.primary ? Model.percent(root.primary.level) : ""
             foreground: root.foreground
             fontFamily: root.fontFamily
-            iconOpacity: root.primary && !root.primary.stale ? 1.0 : 0.55
             iconComponent: Component {
-              Item {
-                implicitWidth: heroGlyph.implicitWidth
-                implicitHeight: heroGlyph.implicitHeight
-
-                Text {
-                  id: heroGlyph
-                  textFormat: Text.PlainText
-                  text: root.primary ? Model.kindIcon(root.primary.kind) : "󰍽"
-                  color: root.primary ? root.levelColor(root.primary) : root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.display
-                }
-
-                BoltIcon {
-                  visible: !!root.primary && root.primary.charging
-                  anchors.right: parent.right
-                  anchors.bottom: parent.bottom
-                  anchors.rightMargin: -Style.space(4)
-                  implicitHeight: Math.round(Style.font.display * 0.55)
-                  color: root.accent
-                }
+              Icon {
+                name: root.laptop ? Model.batteryIcon(root.laptop.level, root.laptop.charging) : "battery-4"
+                size: Style.font.display
+                color: root.laptop ? root.levelColor(root.laptop) : root.foreground
               }
             }
             trailingControl: Component {
@@ -155,7 +165,7 @@ Panel {
 
                 PanelActionButton {
                   iconText: "󰒓"
-                  tooltipText: root.setupOpen ? "Close settings (c)" : "Settings (c)"
+                  tooltipText: root.setupOpen ? "Close settings (c)" : "Settings: what the bar shows (c)"
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                   onClicked: root.setupOpen = !root.setupOpen
@@ -166,14 +176,14 @@ Panel {
 
           // ------------------------------------------------- hidraw access
           Column {
-            visible: root.needsAccess
+            visible: root.needsAccess && !root.setupOpen
             width: parent.width
             spacing: Style.space(8)
 
             Text {
               width: parent.width
               textFormat: Text.PlainText
-              text: "Reading this device needs a udev rule that lets your user open its HID node. It is installed once, with your password."
+              text: "Reading your mouse or headset needs a udev rule that lets your user open its HID node. It is installed once, with your password."
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -201,9 +211,286 @@ Panel {
             }
           }
 
-          // ------------------------------------------------------ devices
+          // ------------------------------------------------------- laptop
           Column {
-            visible: !root.setupOpen
+            visible: !!root.laptop && !root.setupOpen
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSeparator { foreground: root.foreground }
+
+            PanelSectionHeader {
+              text: "LAPTOP"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Item {
+              width: parent.width
+              height: Math.max(lapIcon.height, lapText.implicitHeight)
+
+              Icon {
+                id: lapIcon
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                name: "device-laptop"
+                size: Style.font.display
+                color: root.foreground
+              }
+
+              Column {
+                id: lapText
+                anchors.left: lapIcon.right
+                anchors.leftMargin: Style.space(10)
+                anchors.right: lapLevel.left
+                anchors.rightMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(1)
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: Model.laptopStatus(root.laptop)
+                  elide: Text.ElideRight
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  width: parent.width
+                  visible: !!root.laptop && root.laptop.batteries.length > 1
+                  textFormat: Text.PlainText
+                  text: root.laptop ? root.laptop.batteries.join(" + ") : ""
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              Row {
+                id: lapLevel
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(4)
+
+                BoltIcon {
+                  visible: !!root.laptop && root.laptop.charging
+                  anchors.verticalCenter: parent.verticalCenter
+                  implicitHeight: Math.round(Style.font.title * 1.0)
+                  color: root.accent
+                }
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: root.laptop ? Model.percent(root.laptop.level) : ""
+                  color: root.laptop ? root.levelColor(root.laptop) : root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                }
+              }
+            }
+
+            LevelBar {
+              width: parent.width
+              level: root.laptop ? root.laptop.level : 0
+              fill: root.laptop ? (root.laptop.charging ? root.accent : root.levelColor(root.laptop)) : root.foreground
+
+              // The charge limit, marked on the track.
+              Rectangle {
+                visible: !!root.laptop && !!root.laptop.chargeLimit
+                x: parent.width * (root.laptop && root.laptop.chargeLimit ? root.laptop.chargeLimit : 100) / 100 - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(2, Style.space(2))
+                height: parent.height * 2.4
+                radius: width / 2
+                color: root.dim
+              }
+            }
+
+            Grid {
+              width: parent.width
+              columns: 2
+              columnSpacing: Style.space(10)
+              rowSpacing: Style.space(6)
+
+              Repeater {
+                model: Model.laptopFacts(root.laptop)
+
+                Row {
+                  required property var modelData
+                  width: (column.width - Style.space(10)) / 2
+                  spacing: Style.space(6)
+
+                  Icon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: modelData.icon
+                    size: Style.font.body
+                    color: root.dim
+                  }
+
+                  Column {
+                    width: parent.width - Style.font.body - parent.spacing
+                    spacing: 0
+
+                    Text {
+                      width: parent.width
+                      textFormat: Text.PlainText
+                      text: modelData.label
+                      elide: Text.ElideRight
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                    }
+
+                    Text {
+                      width: parent.width
+                      textFormat: Text.PlainText
+                      text: modelData.value
+                      elide: Text.ElideRight
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // ------------------------------------------------------ AirPods
+          Column {
+            visible: !!root.airpods && !root.setupOpen
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSeparator { foreground: root.foreground }
+
+            PanelSectionHeader {
+              text: "AIRPODS"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Item {
+              width: parent.width
+              height: Math.max(podsIcon.height, podsTitle.implicitHeight)
+
+              AirPodsIcon {
+                id: podsIcon
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                iconSize: Style.font.display
+                color: root.airpods && root.airpods.known && !root.airpods.stale ? root.foreground : root.dim
+                variant: Model.airpodsVariant(root.airpods)
+              }
+
+              Column {
+                id: podsTitle
+                anchors.left: podsIcon.right
+                anchors.leftMargin: Style.space(10)
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(1)
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: root.airpods ? root.airpods.name + (root.airpods.model && root.airpods.model !== root.airpods.name ? "  ·  " + root.airpods.model : "") : ""
+                  elide: Text.ElideRight
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: Model.airpodsStatus(root.airpods)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+
+            Row {
+              visible: !!root.airpods && root.airpods.known
+              width: parent.width
+              spacing: Style.space(10)
+
+              Repeater {
+                id: podParts
+                model: Model.airpodsParts(root.airpods)
+
+                Column {
+                  required property var modelData
+                  readonly property var pod: modelData.pod
+                  width: (parent.width - parent.spacing * (podParts.count - 1)) / Math.max(1, podParts.count)
+                  spacing: Style.space(5)
+
+                  Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: Style.space(4)
+
+                    Icon {
+                      visible: modelData.icon !== "airpods"
+                      anchors.verticalCenter: parent.verticalCenter
+                      name: modelData.icon
+                      size: Style.font.display
+                      color: pod ? root.foreground : root.dim
+                    }
+
+                    AirPodsIcon {
+                      visible: modelData.icon === "airpods"
+                      anchors.verticalCenter: parent.verticalCenter
+                      iconSize: Style.font.display
+                      color: pod ? root.foreground : root.dim
+                      variant: Model.airpodsVariant(root.airpods)
+                    }
+
+                    BoltIcon {
+                      visible: !!pod && pod.charging
+                      anchors.verticalCenter: parent.verticalCenter
+                      implicitHeight: Math.round(Style.font.body * 1.1)
+                      color: root.accent
+                    }
+                  }
+
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    textFormat: Text.PlainText
+                    text: pod ? Model.percent(pod.level) : "--"
+                    color: pod ? (root.airpods.stale ? root.dim : root.levelColor(pod)) : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.subtitle
+                    font.bold: true
+                  }
+
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    textFormat: Text.PlainText
+                    text: modelData.label + (pod && pod.inEar ? " · in ear" : "")
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  LevelBar {
+                    width: parent.width
+                    level: pod ? pod.level : 0
+                    fill: pod && pod.charging ? root.accent : (root.airpods && root.airpods.stale ? root.dim : root.foreground)
+                  }
+                }
+              }
+            }
+          }
+
+          // -------------------------------------------------- peripherals
+          Column {
+            visible: !root.setupOpen && (root.devices.length > 0 || (!root.laptop && !root.airpods))
             width: parent.width
             spacing: Style.space(4)
 
@@ -219,7 +506,7 @@ Panel {
               visible: root.devices.length === 0 && !!root.client && root.client.loaded
               width: parent.width
               textFormat: Text.PlainText
-              text: "Nothing found. Wireless mice, keyboards, headsets and controllers show up here when the kernel, UPower, openrazer or HeadsetControl can read them."
+              text: "Nothing found. Wireless mice, keyboards, headsets, controllers and phones show up here."
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -232,22 +519,20 @@ Panel {
               Rectangle {
                 id: row
                 required property var modelData
-                required property int index
-                readonly property bool chosen: !!root.primary && root.primary.id === modelData.id
-                readonly property bool hasLevel: modelData.level !== null && modelData.level !== undefined
-                readonly property bool highlighted: rowMouse.containsMouse || root.cursor === index
+                readonly property bool shown: Model.inBar(modelData, root.barDevices)
+                readonly property bool hasLevel: Model.hasLevel(modelData.level)
 
                 width: parent.width
                 height: rowContent.implicitHeight + Style.space(14)
                 radius: Style.cornerRadius
-                color: highlighted ? Style.selectedFillFor(root.foreground, root.accent) : "transparent"
+                color: rowMouse.containsMouse ? Style.selectedFillFor(root.foreground, root.accent) : "transparent"
 
                 MouseArea {
                   id: rowMouse
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.choose(row.modelData)
+                  onClicked: root.toggleDevice(row.modelData)
                 }
 
                 Column {
@@ -261,23 +546,21 @@ Panel {
 
                   Item {
                     width: parent.width
-                    height: Math.max(textCol.implicitHeight, glyph.implicitHeight)
+                    height: Math.max(textCol.implicitHeight, glyph.height)
 
-                    Text {
+                    Icon {
                       id: glyph
                       anchors.left: parent.left
                       anchors.verticalCenter: parent.verticalCenter
-                      width: Style.space(26)
-                      textFormat: Text.PlainText
-                      text: Model.kindIcon(row.modelData.kind)
+                      name: Model.kindIcon(row.modelData.kind)
+                      size: Style.font.display
                       color: row.modelData.stale ? root.dim : root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.icon
                     }
 
                     Column {
                       id: textCol
                       anchors.left: glyph.right
+                      anchors.leftMargin: Style.space(10)
                       anchors.right: levelRow.left
                       anchors.rightMargin: Style.space(8)
                       anchors.verticalCenter: parent.verticalCenter
@@ -291,17 +574,27 @@ Panel {
                         color: root.foreground
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.body
-                        font.bold: row.chosen
+                        font.bold: row.shown
                       }
 
-                      Text {
-                        width: parent.width
-                        textFormat: Text.PlainText
-                        text: Model.subtitle(row.modelData)
-                        elide: Text.ElideRight
-                        color: row.modelData.status === "no-access" ? root.urgent : root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
+                      Row {
+                        spacing: Style.space(4)
+
+                        Icon {
+                          visible: name !== ""
+                          anchors.verticalCenter: parent.verticalCenter
+                          name: Model.connectionIcon(row.modelData.connection)
+                          size: Style.font.caption
+                          color: root.dim
+                        }
+
+                        Text {
+                          textFormat: Text.PlainText
+                          text: Model.subtitle(row.modelData)
+                          color: row.modelData.status === "no-access" ? root.urgent : root.dim
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.caption
+                        }
                       }
                     }
 
@@ -322,7 +615,7 @@ Panel {
                         anchors.verticalCenter: parent.verticalCenter
                         textFormat: Text.PlainText
                         text: Model.percent(row.modelData.level)
-                        color: row.hasLevel && !row.modelData.stale ? root.levelColor(row.modelData) : root.dim
+                        color: row.hasLevel ? root.levelColor(row.modelData) : root.dim
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.subtitle
                         font.bold: true
@@ -330,23 +623,25 @@ Panel {
                     }
                   }
 
-                  Rectangle {
+                  LevelBar {
                     visible: row.hasLevel
                     width: parent.width
-                    height: Math.max(3, Style.space(4))
-                    radius: height / 2
-                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
-
-                    Rectangle {
-                      width: parent.width * Math.max(0, Math.min(100, row.modelData.level || 0)) / 100
-                      height: parent.height
-                      radius: parent.radius
-                      color: row.modelData.stale ? root.dim : root.levelColor(row.modelData)
-                      Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                    }
+                    level: row.modelData.level || 0
+                    fill: row.modelData.charging ? root.accent : root.levelColor(row.modelData)
                   }
                 }
               }
+            }
+
+            Text {
+              visible: root.devices.length > 0
+              width: parent.width
+              textFormat: Text.PlainText
+              text: "Click a device to show or hide it in the bar. Bold ones are shown."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
           }
 
@@ -359,43 +654,66 @@ Panel {
             PanelSeparator { foreground: root.foreground }
 
             PanelSectionHeader {
-              text: "BAR"
+              text: "SHOW IN THE BAR"
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
 
-            Toggle {
-              width: parent.width
-              label: "Show the percentage"
-              checked: root.setting("showPercent", true) === true
-              foreground: root.foreground
-              accent: root.accent
-              fontFamily: root.fontFamily
-              titleSize: Style.font.body
-              onClicked: root.setOption("showPercent", !checked)
+            Repeater {
+              model: root.barOptions
+
+              Toggle {
+                required property var modelData
+                readonly property bool on: root.setting(modelData.key, modelData.fallback) === true
+                width: parent.width
+                label: modelData.label
+                checked: on
+                foreground: root.foreground
+                accent: root.accent
+                fontFamily: root.fontFamily
+                titleSize: Style.font.body
+                onClicked: root.setOption(modelData.key, !on)
+              }
+            }
+
+            Repeater {
+              model: root.devices
+
+              Toggle {
+                required property var modelData
+                readonly property bool on: Model.inBar(modelData, root.barDevices)
+                width: parent.width
+                label: modelData.name
+                description: Model.kindLabel(modelData.kind) + " · " + Model.subtitle(modelData)
+                checked: on
+                foreground: root.foreground
+                accent: root.accent
+                fontFamily: root.fontFamily
+                titleSize: Style.font.body
+                onClicked: root.toggleDevice(modelData)
+              }
             }
 
             Toggle {
               width: parent.width
-              label: "Hide when no device is found"
-              checked: root.setting("hideWhenEmpty", true) === true
+              label: "Show percentages"
+              description: "Turn off for icons only"
+              checked: root.setting("barPercent", true) === true
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
               titleSize: Style.font.body
-              onClicked: root.setOption("hideWhenEmpty", !checked)
+              onClicked: root.setOption("barPercent", !checked)
             }
 
-            Toggle {
+            Text {
               width: parent.width
-              label: "Pick the bar device automatically"
-              description: "The first mouse found. Click a device in the list to pin it instead."
-              checked: String(root.setting("device", "")) === ""
-              foreground: root.foreground
-              accent: root.accent
-              fontFamily: root.fontFamily
-              titleSize: Style.font.body
-              onClicked: root.setOption("device", checked && root.primary ? root.primary.id : "")
+              textFormat: Text.PlainText
+              text: "Turn everything off to show only the battery icon."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
 
             PanelSeparator { foreground: root.foreground }
@@ -408,7 +726,8 @@ Panel {
 
             Toggle {
               width: parent.width
-              label: "Notify when a device runs low"
+              label: "Notify when something runs low"
+              description: "The laptop battery keeps Omarchy's own warning"
               checked: root.setting("notifyLow", true) === true
               foreground: root.foreground
               accent: root.accent
@@ -437,7 +756,7 @@ Panel {
             }
 
             Button {
-              text: "Back to devices"
+              text: "Back to batteries"
               iconText: "󰁍"
               bordered: true
               foreground: root.foreground

@@ -5,16 +5,23 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Bar entry: the chosen peripheral's icon and level, with a bolt while it
-// charges. The bar draws this widget once per monitor; the first instance
-// owns the poller and the others read from it.
+// Bar entry: the batteries picked in settings, each as an icon and level,
+// with a bolt while it charges. The bar draws this widget once per monitor;
+// the first instance owns the poller and the others read from it.
 BarWidget {
   id: root
-  moduleName: "io.github.t3lluz.peripheral-battery"
+  moduleName: "io.github.t3lluz.batteries"
 
-  readonly property string preferredDevice: String(setting("device", ""))
-  readonly property bool showPercent: setting("showPercent", true) === true
-  readonly property bool hideWhenEmpty: setting("hideWhenEmpty", true) === true
+  readonly property var barOptions: ({
+    laptop: setting("barLaptop", true) === true,
+    laptopRate: setting("barLaptopRate", false) === true,
+    laptopTime: setting("barLaptopTime", false) === true,
+    airpods: setting("barAirpods", true) === true,
+    airpodsCase: setting("barAirpodsCase", false) === true,
+    devices: Array.isArray(settings ? settings.barDevices : null) ? settings.barDevices : null,
+    percent: setting("barPercent", true) === true,
+    lowThreshold: lowThreshold
+  })
   readonly property int lowThreshold: Number(setting("lowThreshold", 20)) || 20
   readonly property bool notifyLow: setting("notifyLow", true) === true
   readonly property int intervalSec: Number(setting("refreshIntervalSec", 30)) || 30
@@ -24,18 +31,17 @@ BarWidget {
   readonly property var ownClient: ownClientLoader.item ? ownClientLoader.item : null
   readonly property var client: isLeader ? ownClient : (leader ? leader.ownClient : null)
 
-  readonly property var devices: client ? client.devices : []
-  readonly property var primary: Model.pickPrimary(devices, preferredDevice)
-  readonly property bool hasLevel: !!primary && primary.level !== null && primary.level !== undefined
-  readonly property bool empty: !!client && client.loaded && devices.length === 0
+  readonly property var batteryState: client ? client.state : ({ laptop: null, airpods: null, devices: [] })
+  readonly property var items: Model.barItems(batteryState, barOptions)
+  readonly property var shownItems: vertical ? items.slice(0, 1) : items
   readonly property bool needsAccess: !!client && client.needsAccess.length > 0
   readonly property color barFg: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(barFg, 1.55)
-  readonly property color levelColor: {
-    if (!primary) return dim
-    if (Model.isLow(primary, lowThreshold) && !primary.stale) return urgent
-    if (primary.stale || primary.status === "asleep" || primary.status === "offline") return dim
+
+  function toneColor(tone) {
+    if (tone === "low") return urgent
+    if (tone === "dim") return dim
     return barFg
   }
 
@@ -71,6 +77,7 @@ BarWidget {
   function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
   function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
   function refresh() { if (client) client.pollNow() }
+  function prepareSettings() { if (panelLoader.item) panelLoader.item.setupOpen = true }
 
   function injectPanel() {
     var target = panelLoader.item
@@ -89,8 +96,7 @@ BarWidget {
     if (client) client.openPanels = Math.max(0, client.openPanels + (want ? 1 : -1))
   }
 
-  visible: !(hideWhenEmpty && empty)
-  implicitWidth: visible ? button.implicitWidth : 0
+  implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
   onBarChanged: { electLeader(); injectPanel() }
@@ -114,9 +120,11 @@ BarWidget {
     sourceComponent: Component { BatteryClient { } }
   }
 
+  // Every widget writes the same values, so the shared client sees one config.
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "intervalSec"; value: root.intervalSec }
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "lowThreshold"; value: root.lowThreshold }
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "notifyLow"; value: root.notifyLow }
+  Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "liveBar"; value: root.barOptions.laptopRate || root.barOptions.laptopTime }
 
   Loader {
     id: panelLoader
@@ -130,18 +138,27 @@ BarWidget {
   }
 
   IpcHandler {
-    target: "io.github.t3lluz.peripheral-battery"
+    target: "io.github.t3lluz.batteries"
 
     function open(): void { root.open() }
     function close(): void { root.close() }
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
+    function settings(): void {
+      root.broadcast("prepareSettings")
+      var shell = root.bar ? root.bar.shell : null
+      if (shell && typeof shell.summon === "function") shell.summon(root.moduleName, "{}")
+      else root.open()
+    }
     function refresh(): string { root.refresh(); return "ok" }
     function status(): string {
       var c = root.client
       return JSON.stringify({
-        primary: root.primary,
+        options: root.barOptions,
+        bar: root.items,
+        laptop: c ? c.laptop : null,
+        airpods: c ? c.airpods : null,
         devices: c ? c.devices : [],
         needsAccess: c ? c.needsAccess : [],
         error: c ? c.errorText : "loading"
@@ -154,8 +171,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     hasVisualContent: true
-    tooltipText: root.needsAccess ? "Peripheral Battery: click to grant access to your mouse"
-      : Model.tooltip(root.devices, root.primary)
+    tooltipText: root.needsAccess ? "Batteries: click to grant access to your mouse" : Model.tooltip(root.batteryState)
     fixedWidth: root.vertical ? -1 : content.implicitWidth + scaledHorizontalMargin * 2
     fixedHeight: root.vertical ? Style.bar.iconSlot : -1
 
@@ -167,39 +183,60 @@ BarWidget {
     Row {
       id: content
       anchors.centerIn: parent
-      spacing: Style.space(4)
+      spacing: Style.space(10)
 
-      Item {
-        width: Style.bar.iconCanvas
-        height: Style.bar.iconCanvas
+      // Nothing picked, or nothing present: the battery mark alone.
+      Icon {
+        visible: root.shownItems.length === 0
         anchors.verticalCenter: parent.verticalCenter
+        name: "battery"
+        size: Style.bar.iconFont
+        color: root.needsAccess ? root.urgent : root.barFg
+      }
 
-        OpticalGlyph {
-          anchors.fill: parent
-          text: root.primary ? Model.kindIcon(root.primary.kind) : "󰍽"
-          fontFamily: button.fontFamily
-          fontSize: Style.bar.iconFont
-          color: root.needsAccess ? root.urgent : root.levelColor
+      Repeater {
+        model: root.shownItems
+
+        Row {
+          required property var modelData
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(3)
+
+          Icon {
+            visible: modelData.icon !== "airpods"
+            anchors.verticalCenter: parent.verticalCenter
+            name: modelData.icon
+            size: Style.bar.iconFont
+            color: root.toneColor(modelData.tone)
+          }
+
+          AirPodsIcon {
+            visible: modelData.icon === "airpods"
+            anchors.verticalCenter: parent.verticalCenter
+            // A pair of buds is wider than tall, so it runs a size up, as in omapods.
+            iconSize: Math.round(Style.bar.iconFont * 1.15)
+            color: root.toneColor(modelData.tone)
+            variant: Model.airpodsVariant(root.batteryState.airpods)
+          }
+
+          BoltIcon {
+            visible: modelData.charging
+            anchors.verticalCenter: parent.verticalCenter
+            implicitHeight: Math.round(button.fontSize * 1.05)
+            color: Color.accent
+          }
+
+          Text {
+            visible: text !== "" && !root.vertical
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: modelData.text
+            color: root.toneColor(modelData.tone)
+            font.family: button.fontFamily
+            font.pixelSize: button.fontSize
+            renderType: Text.NativeRendering
+          }
         }
-      }
-
-      BoltIcon {
-        visible: !!root.primary && root.primary.charging
-        anchors.verticalCenter: parent.verticalCenter
-        implicitHeight: Math.round(button.fontSize * 1.05)
-        color: Color.accent
-      }
-
-      Text {
-        visible: root.showPercent && !root.vertical && !!root.primary
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: root.primary ? (root.hasLevel ? Model.percent(root.primary.level)
-          : (root.primary.status === "asleep" ? "zZ" : "--")) : ""
-        color: root.levelColor
-        font.family: button.fontFamily
-        font.pixelSize: button.fontSize
-        renderType: Text.NativeRendering
       }
     }
   }

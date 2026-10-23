@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-Battery levels of mice, keyboards, headsets and controllers, as one JSON line.
+Every battery on and around this computer, as one JSON line.
 
-Sources, in order:
+  laptop          the internal battery from /sys/class/power_supply: level,
+                  charge or discharge rate, time left, health, cycles, and the
+                  charge limit; time estimates come from UPower when it has them
+  airpods         AirPods from the librepods daemon's status file (the one
+                  omapods reads): each bud and the case, or a Max's one battery
+
+Peripherals, in order (the first source wins when two report one device):
   glorious        Glorious Model O / O- / D / D- Wireless over /dev/hidraw
                   (korkje/mow protocol). On the USB cable the mouse enumerates
                   with its wired PID and is charging; on the 2.4 GHz dongle it
@@ -13,14 +19,16 @@ Sources, in order:
   upower          everything UPower knows: Bluetooth (BlueZ), Logitech HID++,
                   Sony and Nintendo controllers, Apple and Wacom devices, ...
   headsetcontrol  any headset HeadsetControl supports, when it is installed
+  iphone          an iPhone or iPad on USB, through libimobiledevice
+  kdeconnect      phones paired with KDE Connect
 
 Only the Python standard library is used: HID feature reports go through the
 hidraw ioctls directly, so there is no hidapi dependency.
 
 Usage:
-  peripheral-battery [probe]     JSON for the bar widget
-  peripheral-battery list        human readable
-  peripheral-battery install-udev  (as root) grant the seat user hidraw access
+  batteries [probe]       JSON for the bar widget
+  batteries list          human readable
+  batteries install-udev  (as root) grant the seat user hidraw access
 """
 
 from __future__ import annotations
@@ -37,8 +45,10 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
-UDEV_RULES = os.path.join(HERE, "..", "udev", "70-omarchy-peripheral-battery.rules")
-UDEV_DEST = "/etc/udev/rules.d/70-omarchy-peripheral-battery.rules"
+UDEV_RULES = os.path.join(HERE, "..", "udev", "70-omarchy-batteries.rules")
+UDEV_DEST = "/etc/udev/rules.d/70-omarchy-batteries.rules"
+# Installed by 1.0, when this was Peripheral Battery. Same rules.
+UDEV_LEGACY = "/etc/udev/rules.d/70-omarchy-peripheral-battery.rules"
 
 # ---------------------------------------------------------------- hidraw
 
@@ -325,8 +335,8 @@ def razer() -> list[dict]:
 
 # ------------------------------------------------------------------ UPower
 
-# The laptop's own battery and power supplies belong to omarchy.power.
-UPOWER_SKIP_KINDS = {"line-power", "battery", "ups", "monitor"}
+# The laptop's own battery comes from sysfs (see laptop()), not from here.
+UPOWER_SKIP_KINDS = {"line-power", "battery", "monitor"}
 UPOWER_STATES = {
     "charging": "charging",
     "pending-charge": "charging",
@@ -373,14 +383,291 @@ def parse_upower_dump(text: str) -> list[dict]:
     return out
 
 
-def upower() -> list[dict]:
+def _duration(text: str) -> int | None:
+    m = re.match(r"([\d.]+)\s+(second|minute|hour|day)", text or "")
+    if not m:
+        return None
+    return round(float(m.group(1)) * {"second": 1, "minute": 60, "hour": 3600, "day": 86400}[m.group(2)])
+
+
+def parse_upower_battery_times(text: str) -> dict:
+    """UPower's smoothed time-to-empty/full for the laptop battery, by native path."""
+    out = {}
+    for block in re.split(r"\n(?=Device: )", text):
+        native = re.search(r"^\s+native-path:\s+(\S+)", block, re.M)
+        if not native or not re.search(r"^  battery$", block, re.M):
+            continue
+        times = {}
+        for key, field in (("time to empty", "timeToEmpty"), ("time to full", "timeToFull")):
+            m = re.search(r"^\s+%s:\s+(.*)$" % key, block, re.M)
+            if m and _duration(m.group(1)):
+                times[field] = _duration(m.group(1))
+        out[native.group(1)] = times
+    return out
+
+
+def upower_dump() -> str:
     if not shutil.which("upower"):
+        return ""
+    try:
+        return subprocess.run(["upower", "--dump"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+# ------------------------------------------------------------------ laptop
+
+PS_ROOT = "/sys/class/power_supply"
+
+
+def _num(path: str) -> int | None:
+    raw = _read_text(path)
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def laptop(upower_times: dict, root: str = PS_ROOT) -> dict | None:
+    """The internal battery (all of them combined, on a two-battery laptop)."""
+    bats = []
+    ac_online = False
+    for d in sorted(glob.glob(os.path.join(root, "*"))):
+        kind = _read_text(os.path.join(d, "type"))
+        scope = _read_text(os.path.join(d, "scope"))
+        if kind in ("Mains", "USB") and _read_text(os.path.join(d, "online")) == "1" and scope != "Device":
+            ac_online = True
+        if kind == "Battery" and scope != "Device" and _read_text(os.path.join(d, "present")) != "0":
+            bats.append(d)
+    if not bats:
+        return None
+
+    energy = full = design = rate = 0.0
+    statuses, cycles, names = [], [], []
+    limit = start = None
+    for d in bats:
+        p = lambda f: os.path.join(d, f)
+        volts = (_num(p("voltage_now")) or 0) / 1e6
+        if _num(p("energy_now")) is not None:
+            e, f, fd = _num(p("energy_now")), _num(p("energy_full")), _num(p("energy_full_design"))
+            scale = 1e6
+        else:
+            # charge_* is in µAh; with the voltage it is µWh.
+            e, f, fd = _num(p("charge_now")), _num(p("charge_full")), _num(p("charge_full_design"))
+            scale = 1e6 / volts if volts else None
+        if scale:
+            energy += (e or 0) / scale
+            full += (f or 0) / scale
+            design += (fd or 0) / scale
+        power = _num(p("power_now"))
+        if power:
+            rate += abs(power) / 1e6
+        elif _num(p("current_now")) and volts:
+            rate += abs(_num(p("current_now"))) / 1e6 * volts
+        statuses.append(_read_text(p("status")))
+        c = _num(p("cycle_count"))
+        if c:
+            cycles.append(c)
+        limit = _num(p("charge_control_end_threshold")) or limit
+        start = _num(p("charge_control_start_threshold")) or start
+        names.append(os.path.basename(d))
+
+    if full > 0:
+        level = round(energy / full * 100)
+    else:
+        caps = [_num(os.path.join(d, "capacity")) for d in bats]
+        level = round(sum(c for c in caps if c is not None) / max(1, len([c for c in caps if c is not None])))
+    level = max(0, min(100, level))
+
+    if "Charging" in statuses:
+        status = "charging"
+    elif "Discharging" in statuses and not ac_online:
+        status = "discharging"
+    elif all(s == "Full" for s in statuses) or level >= 100:
+        status = "full"
+    elif ac_online and limit and limit < 100 and level >= limit - 2:
+        # Plugged in and the firmware stopped at the charge limit on purpose.
+        status = "held"
+    elif ac_online:
+        status = "plugged"
+    else:
+        status = "discharging"
+
+    times = {}
+    for n in names:
+        times.update(upower_times.get(n, {}))
+    time_to_empty = time_to_full = None
+    if status == "discharging":
+        time_to_empty = times.get("timeToEmpty") or (round(energy / rate * 3600) if rate > 0.1 else None)
+    elif status == "charging":
+        target = full * (limit / 100 if limit else 1)
+        time_to_full = times.get("timeToFull") or (round(max(0, target - energy) / rate * 3600) if rate > 0.1 else None)
+
+    return {
+        "level": level,
+        "status": status,
+        "charging": status == "charging",
+        "acOnline": ac_online,
+        "rateW": round(rate, 1) if status in ("charging", "discharging") else 0.0,
+        "timeToEmpty": time_to_empty,
+        "timeToFull": time_to_full,
+        "energyWh": round(energy, 1),
+        "energyFullWh": round(full, 1),
+        "energyDesignWh": round(design, 1),
+        "health": round(full / design * 100) if design > 0 else None,
+        "cycles": sum(cycles) if cycles else None,
+        "chargeLimit": limit if limit and limit < 100 else None,
+        "chargeStart": start if start and limit and limit < 100 else None,
+        "batteries": names,
+    }
+
+
+# ----------------------------------------------------------------- AirPods
+
+LIBREPODS_STATE = os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "librepods", "status.json")
+
+
+def _pod(raw) -> dict | None:
+    if not isinstance(raw, dict) or not raw.get("available"):
+        return None
+    level = raw.get("level")
+    if not isinstance(level, int) or not 0 <= level <= 100:
+        return None
+    pod = {"level": level, "charging": raw.get("charging") is True}
+    if "in_ear" in raw:
+        pod["inEar"] = raw.get("in_ear") is True
+    return pod
+
+
+def parse_librepods(text: str) -> dict | None:
+    """The librepods daemon's status line. None when the daemon is not running."""
+    try:
+        s = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(s, dict) or "schema_version" not in s:
+        return None
+    is_headset = s.get("is_headset") is True
+    parts = {"left": _pod(s.get("left")), "right": _pod(s.get("right")), "case": _pod(s.get("case"))}
+    headset = _pod(s.get("headset")) if is_headset else None
+    buds = [p for p in (parts["left"], parts["right"]) if p]
+    if is_headset:
+        level = headset["level"] if headset else None
+        charging = bool(headset and headset["charging"])
+    else:
+        # The bar shows the emptier bud: that is the one that ends the session.
+        level = min(p["level"] for p in buds) if buds else None
+        charging = bool(buds) and all(p["charging"] for p in buds)
+    return {
+        "name": s.get("device_name") or s.get("model_name") or "AirPods",
+        "model": s.get("model_name") or "",
+        "connected": s.get("connected") is True,
+        "isHeadset": is_headset,
+        "isPro": s.get("is_pro_series") is True,
+        "left": parts["left"],
+        "right": parts["right"],
+        "case": parts["case"],
+        "headset": headset,
+        "level": level,
+        "charging": charging,
+        "known": level is not None or parts["case"] is not None,
+    }
+
+
+def airpods(path: str = LIBREPODS_STATE) -> dict | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return parse_librepods(f.read())
+    except OSError:
+        return None
+
+
+# ---------------------------------------------------- phones and tablets
+
+
+def parse_ideviceinfo(text: str) -> dict:
+    out = {}
+    for line in text.splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def iphone() -> list[dict]:
+    if not shutil.which("idevice_id") or not shutil.which("ideviceinfo"):
         return []
     try:
-        res = subprocess.run(["upower", "--dump"], capture_output=True, text=True, timeout=5)
+        ids = subprocess.run(["idevice_id", "-l"], capture_output=True, text=True, timeout=3).stdout.split()
     except (OSError, subprocess.TimeoutExpired):
         return []
-    return parse_upower_dump(res.stdout)
+    out = []
+    for udid in ids:
+        try:
+            info = parse_ideviceinfo(subprocess.run(["ideviceinfo", "-u", udid], capture_output=True, text=True, timeout=4).stdout)
+            batt = parse_ideviceinfo(subprocess.run(["ideviceinfo", "-u", udid, "-q", "com.apple.mobile.battery"],
+                                                    capture_output=True, text=True, timeout=4).stdout)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        level = batt.get("BatteryCurrentCapacity", "")
+        if not level.isdigit():
+            continue
+        charging = batt.get("BatteryIsCharging") == "true"
+        cls = info.get("DeviceClass", "iPhone")
+        out.append({
+            "id": "iphone:" + udid,
+            "name": info.get("DeviceName") or cls,
+            "kind": "tablet" if cls == "iPad" else "phone",
+            "source": "iphone",
+            "level": int(level),
+            "charging": charging,
+            "status": "charging" if charging else ("full" if level == "100" else "discharging"),
+            "connection": "usb",
+        })
+    return out
+
+
+def parse_kdeconnect_battery(text: str) -> tuple[int | None, bool]:
+    charge = re.search(r"'charge':\s*<(-?\d+)>", text)
+    charging = re.search(r"'isCharging':\s*<(true|false)>", text)
+    level = int(charge.group(1)) if charge and 0 <= int(charge.group(1)) <= 100 else None
+    return level, bool(charging and charging.group(1) == "true")
+
+
+def kdeconnect() -> list[dict]:
+    if not shutil.which("kdeconnect-cli") or not shutil.which("gdbus"):
+        return []
+    try:
+        lines = subprocess.run(["kdeconnect-cli", "-a", "--id-name-only"], capture_output=True, text=True, timeout=4).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    out = []
+    for line in lines.splitlines():
+        dev_id, _, name = line.strip().partition(" ")
+        if not dev_id:
+            continue
+        try:
+            res = subprocess.run(["gdbus", "call", "--session", "--dest", "org.kde.kdeconnect",
+                                  "--object-path", "/modules/kdeconnect/devices/%s/battery" % dev_id,
+                                  "--method", "org.freedesktop.DBus.Properties.GetAll",
+                                  "org.kde.kdeconnect.device.battery"], capture_output=True, text=True, timeout=3).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        level, charging = parse_kdeconnect_battery(res)
+        if level is None:
+            continue
+        out.append({
+            "id": "kdeconnect:" + dev_id,
+            "name": name or "Phone",
+            "kind": "phone",
+            "source": "kdeconnect",
+            "level": level,
+            "charging": charging,
+            "status": "charging" if charging else ("full" if level >= 100 else "discharging"),
+            "connection": "wireless",
+        })
+    return out
 
 
 # ----------------------------------------------------------- HeadsetControl
@@ -426,13 +713,17 @@ def headsetcontrol() -> list[dict]:
 # -------------------------------------------------------------------- main
 
 
-def merge(groups: list[list[dict]]) -> list[dict]:
+def _key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def merge(groups: list[list[dict]], skip_names: tuple[str, ...] = ()) -> list[dict]:
     """First source wins when two report the same device name."""
-    seen: set[str] = set()
+    seen: set[str] = {_key(n) for n in skip_names if n}
     out = []
     for group in groups:
         for dev in group:
-            key = re.sub(r"[^a-z0-9]", "", dev["name"].lower())
+            key = _key(dev["name"])
             if key in seen:
                 continue
             seen.add(key)
@@ -443,30 +734,65 @@ def merge(groups: list[list[dict]]) -> list[dict]:
 def probe() -> dict:
     nodes = hidraw_nodes()
     denied: list[str] = []
+    dump = upower_dump()
+    pods = airpods()
     groups = [
         glorious_wireless(nodes, denied),
         glorious_wired(nodes, denied),
         hyperx(nodes, denied),
         razer(),
-        upower(),
+        parse_upower_dump(dump),
         headsetcontrol(),
+        iphone(),
+        kdeconnect(),
     ]
     return {
-        "devices": merge(groups),
+        "laptop": laptop(parse_upower_battery_times(dump)),
+        # BlueZ also reports connected AirPods as one headset level; the
+        # librepods reading has each bud and the case, so it wins.
+        "airpods": pods,
+        "devices": merge(groups, (pods["name"],) if pods else ()),
         "needsAccess": sorted(set(denied)),
-        "udevInstalled": os.path.exists(UDEV_DEST),
+        "udevInstalled": os.path.exists(UDEV_DEST) or os.path.exists(UDEV_LEGACY),
         "time": int(time.time()),
     }
 
 
+def _hm(seconds: int | None) -> str:
+    if not seconds:
+        return ""
+    return "%dh %02dm" % (seconds // 3600, seconds % 3600 // 60)
+
+
 def cmd_list() -> int:
     result = probe()
-    if not result["devices"]:
-        print("No battery-powered peripherals found.")
+    lap = result["laptop"]
+    if lap:
+        extra = [lap["status"]]
+        if lap["rateW"]:
+            extra.append("%.1f W" % lap["rateW"])
+        if lap["timeToEmpty"] or lap["timeToFull"]:
+            extra.append(_hm(lap["timeToEmpty"] or lap["timeToFull"]) + (" left" if lap["timeToEmpty"] else " to full"))
+        if lap["health"]:
+            extra.append("health %d%%" % lap["health"])
+        if lap["chargeLimit"]:
+            extra.append("limit %d%%" % lap["chargeLimit"])
+        print("%-34s %-9s %4d%%%s  %s" % ("Laptop (" + "+".join(lap["batteries"]) + ")", "laptop",
+                                          lap["level"], " ⚡" if lap["charging"] else "", ", ".join(extra)))
+    pods = result["airpods"]
+    if pods:
+        def part(label, p):
+            return "%s %s%s" % (label, "--" if not p else "%d%%" % p["level"], "⚡" if p and p["charging"] else "")
+        parts = [part("Max", pods["headset"])] if pods["isHeadset"] else \
+            [part("L", pods["left"]), part("R", pods["right"]), part("case", pods["case"])]
+        print("%-34s %-9s %5s  %s, %s" % (pods["name"], "airpods", "--" if pods["level"] is None else "%d%%" % pods["level"],
+                                          " ".join(parts), "connected" if pods["connected"] else "not connected"))
     for d in result["devices"]:
         level = "--" if d["level"] is None else "%d%%" % d["level"]
         bolt = " ⚡" if d["charging"] else ""
         print("%-34s %-9s %5s%s  %s, %s via %s" % (d["name"], d["kind"], level, bolt, d["status"], d["connection"], d["source"]))
+    if not lap and not pods and not result["devices"]:
+        print("No batteries found.")
     if result["needsAccess"]:
         print("\nNo access to " + ", ".join(result["needsAccess"]) + ". Run: sudo %s install-udev" % os.path.realpath(__file__))
     return 0
@@ -476,6 +802,8 @@ def cmd_install_udev() -> int:
     if os.geteuid() != 0:
         print("install-udev must run as root (sudo or pkexec).", file=sys.stderr)
         return 1
+    if os.path.exists(UDEV_LEGACY):
+        os.remove(UDEV_LEGACY)
     shutil.copyfile(UDEV_RULES, UDEV_DEST)
     os.chmod(UDEV_DEST, 0o644)
     subprocess.run(["udevadm", "control", "--reload-rules"], check=False)
