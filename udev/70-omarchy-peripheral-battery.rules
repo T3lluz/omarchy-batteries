@@ -1,0 +1,16 @@
+# Omarchy Peripheral Battery: let the logged-in user read battery reports
+# from mice and headsets whose battery the kernel and UPower cannot see.
+# Installed by `bin/peripheral-battery install-udev`. Replug devices after.
+#
+# uaccess grants access to the active seat's user only, so this must sort
+# before 73-seat-late.rules.
+
+# Glorious Model O / O- / D / D- Wireless: cable (20 11-14) and 2.4 GHz dongle (20 22-25)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="201[1-4]", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="202[2-5]", TAG+="uaccess"
+
+# Glorious Model O / O- / D (wired, Sinowealth)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="0036", TAG+="uaccess"
+
+# HyperX Cloud Alpha Wireless dongle
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03f0", ATTRS{idProduct}=="098d", TAG+="uaccess"

@@ -1,0 +1,501 @@
+#!/usr/bin/env python3
+"""
+Battery levels of mice, keyboards, headsets and controllers, as one JSON line.
+
+Sources, in order:
+  glorious        Glorious Model O / O- / D / D- Wireless over /dev/hidraw
+                  (korkje/mow protocol). On the USB cable the mouse enumerates
+                  with its wired PID and is charging; on the 2.4 GHz dongle it
+                  reports its level and whether it is asleep.
+  glorious-wired  Sinowealth Glorious mice (gloriousctl protocol)
+  hyperx          HyperX Cloud Alpha Wireless dongle over /dev/hidraw
+  razer           openrazer kernel driver (charge_level in sysfs)
+  upower          everything UPower knows: Bluetooth (BlueZ), Logitech HID++,
+                  Sony and Nintendo controllers, Apple and Wacom devices, ...
+  headsetcontrol  any headset HeadsetControl supports, when it is installed
+
+Only the Python standard library is used: HID feature reports go through the
+hidraw ioctls directly, so there is no hidapi dependency.
+
+Usage:
+  peripheral-battery [probe]     JSON for the bar widget
+  peripheral-battery list        human readable
+  peripheral-battery install-udev  (as root) grant the seat user hidraw access
+"""
+
+from __future__ import annotations
+
+import fcntl
+import glob
+import json
+import os
+import re
+import select
+import shutil
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+UDEV_RULES = os.path.join(HERE, "..", "udev", "70-omarchy-peripheral-battery.rules")
+UDEV_DEST = "/etc/udev/rules.d/70-omarchy-peripheral-battery.rules"
+
+# ---------------------------------------------------------------- hidraw
+
+
+def _ioc(direction: int, nr: int, size: int) -> int:
+    return (direction << 30) | (size << 16) | (ord("H") << 8) | nr
+
+
+def _hidiocsfeature(size: int) -> int:
+    return _ioc(3, 0x06, size)
+
+
+def _hidiocgfeature(size: int) -> int:
+    return _ioc(3, 0x07, size)
+
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def hidraw_nodes() -> list[dict]:
+    """Every /dev/hidraw* with its bus, VID, PID, name and USB interface."""
+    nodes = []
+    for sys_path in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        uevent = _read_text(os.path.join(sys_path, "device", "uevent"))
+        m = re.search(r"^HID_ID=([0-9A-Fa-f]+):([0-9A-Fa-f]+):([0-9A-Fa-f]+)$", uevent, re.M)
+        if not m:
+            continue
+        name = re.search(r"^HID_NAME=(.*)$", uevent, re.M)
+        # .../3-1:1.2/0003:258A:2011.0007 -> the parent is the USB interface.
+        iface_dir = os.path.dirname(os.path.realpath(os.path.join(sys_path, "device")))
+        iface = _read_text(os.path.join(iface_dir, "bInterfaceNumber"))
+        nodes.append({
+            "dev": "/dev/" + os.path.basename(sys_path),
+            "bus": int(m.group(1), 16),
+            "vid": int(m.group(2), 16),
+            "pid": int(m.group(3), 16),
+            "name": name.group(1).strip() if name else "",
+            "iface": int(iface, 16) if iface else -1,
+        })
+    return nodes
+
+
+class NoAccess(Exception):
+    pass
+
+
+def _open(dev: str, flags: int = os.O_RDWR) -> int:
+    try:
+        return os.open(dev, flags)
+    except PermissionError as e:
+        raise NoAccess(dev) from e
+
+
+def feature_exchange(dev: str, request: bytes, reply_id: int, reply_len: int, delay: float = 0.0) -> bytes | None:
+    """SET_FEATURE then GET_FEATURE. Both buffers start with the report ID."""
+    fd = _open(dev)
+    try:
+        out = bytearray(request)
+        fcntl.ioctl(fd, _hidiocsfeature(len(out)), out, True)
+        if delay:
+            time.sleep(delay)
+        buf = bytearray(reply_len)
+        buf[0] = reply_id
+        n = fcntl.ioctl(fd, _hidiocgfeature(len(buf)), buf, True)
+        return bytes(buf[: n if n > 0 else len(buf)])
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+# ------------------------------------------------------- Glorious (mow)
+
+# name, wired (USB cable) PID, wireless (dongle) PID — from korkje/mow
+GLORIOUS_WIRELESS = (
+    ("Glorious Model O Wireless", 0x2011, 0x2022),
+    ("Glorious Model O- Wireless", 0x2013, 0x2024),
+    ("Glorious Model D Wireless", 0x2012, 0x2023),
+    ("Glorious Model D- Wireless", 0x2014, 0x2025),
+)
+GLORIOUS_VID = 0x258A
+MOW_IFACE = 2
+MOW_LEN = 65
+# Byte 1 of the reply: active, asleep, ?, ?, waking
+MOW_MARKERS = {0xA1: "active", 0xA4: "asleep", 0xA3: "waking"}
+
+
+def mow_request() -> bytes:
+    buf = bytearray(MOW_LEN)
+    buf[3] = 0x02
+    buf[4] = 0x02
+    buf[6] = 0x83
+    return bytes(buf)
+
+
+def parse_mow(resp: bytes | None) -> dict | None:
+    """{'state': active|asleep|waking|unknown, 'level': int|None} or None."""
+    if not resp or len(resp) < 9 or resp[6] != 0x83:
+        return None
+    state = MOW_MARKERS.get(resp[1], "unknown")
+    level = resp[8]
+    if level > 100:
+        return None
+    if state != "active":
+        # Asleep and waking replies carry no fresh level.
+        return {"state": state, "level": None}
+    return {"state": state, "level": max(1, level)}
+
+
+def _mow_query(node: dict) -> dict | None:
+    return parse_mow(feature_exchange(node["dev"], mow_request(), 0, MOW_LEN, delay=0.05))
+
+
+def glorious_wireless(nodes: list[dict], denied: list[str]) -> list[dict]:
+    out = []
+    for name, wired_pid, wireless_pid in GLORIOUS_WIRELESS:
+        def pick(pid: int) -> dict | None:
+            cands = [n for n in nodes if n["vid"] == GLORIOUS_VID and n["pid"] == pid]
+            cands.sort(key=lambda n: (n["iface"] != MOW_IFACE, n["iface"]))
+            return cands[0] if cands else None
+
+        cable = pick(wired_pid)
+        dongle = pick(wireless_pid)
+        if not cable and not dongle:
+            continue
+        dev = {
+            "id": "glorious:%04x" % wireless_pid,
+            "name": name,
+            "kind": "mouse",
+            "source": "glorious",
+            "level": None,
+            "charging": False,
+            "status": "offline",
+            "connection": "usb" if cable else "wireless",
+        }
+        try:
+            got = _mow_query(cable) if cable else None
+            # The cable enumerates while plugged into this PC, so the mouse
+            # is on USB power: charging until it reports 100%.
+            if got and got["state"] == "active":
+                dev["level"] = got["level"]
+                dev["charging"] = got["level"] < 100
+                dev["status"] = "charging" if dev["charging"] else "full"
+                dev["connection"] = "usb"
+            elif dongle:
+                got = _mow_query(dongle)
+                dev["connection"] = "wireless"
+                if got:
+                    dev["level"] = got["level"]
+                    dev["status"] = "discharging" if got["state"] == "active" else got["state"]
+            elif cable:
+                dev["status"] = "charging"
+                dev["charging"] = True
+        except NoAccess as e:
+            denied.append(str(e))
+            dev["status"] = "no-access"
+        out.append(dev)
+    return out
+
+
+# ------------------------------------------ Glorious wired (gloriousctl)
+
+SINO_PIDS = (0x0036,)
+SINO_IFACE = 1
+
+
+def parse_sinowealth(resp: bytes | None) -> dict | None:
+    if not resp or len(resp) < 6 or resp[1] != 0x1D or resp[2] > 100:
+        return None
+    return {"level": resp[2], "charging": bool(resp[3] & 0x01)}
+
+
+def glorious_wired(nodes: list[dict], denied: list[str]) -> list[dict]:
+    out = []
+    for pid in SINO_PIDS:
+        cands = [n for n in nodes if n["vid"] == GLORIOUS_VID and n["pid"] == pid]
+        cands.sort(key=lambda n: (n["iface"] != SINO_IFACE, n["iface"]))
+        for node in cands:
+            try:
+                got = parse_sinowealth(feature_exchange(node["dev"], bytes([0x05, 0x1D, 0, 0, 0, 0]), 0x05, 8))
+            except NoAccess as e:
+                denied.append(str(e))
+                break
+            if got:
+                out.append({
+                    "id": "glorious:%04x" % pid,
+                    "name": node["name"] or "Glorious mouse",
+                    "kind": "mouse",
+                    "source": "glorious-wired",
+                    "level": got["level"],
+                    "charging": got["charging"],
+                    "status": "charging" if got["charging"] else "discharging",
+                    "connection": "usb",
+                })
+                break
+    return out
+
+
+# -------------------------------------------- HyperX Cloud Alpha Wireless
+
+HYPERX_VID = 0x03F0
+HYPERX_PID = 0x098D
+
+
+def parse_hyperx(data: bytes) -> tuple[int | None, bool | None]:
+    """Scan input reports for 21 BB 0B <level> and 21 BB 0C <charging>."""
+    level, charging = None, None
+    for i in range(len(data) - 3):
+        if data[i] == 0x21 and data[i + 1] == 0xBB:
+            if data[i + 2] == 0x0B and data[i + 3] <= 100:
+                level = data[i + 3]
+            elif data[i + 2] == 0x0C:
+                charging = data[i + 3] == 0x01
+    return level, charging
+
+
+def hyperx(nodes: list[dict], denied: list[str]) -> list[dict]:
+    for node in (n for n in nodes if n["vid"] == HYPERX_VID and n["pid"] == HYPERX_PID):
+        try:
+            fd = _open(node["dev"], os.O_RDWR | os.O_NONBLOCK)
+        except NoAccess as e:
+            denied.append(str(e))
+            return [{"id": "hyperx:098d", "name": "HyperX Cloud Alpha Wireless", "kind": "headset",
+                     "source": "hyperx", "level": None, "charging": False, "status": "no-access",
+                     "connection": "wireless"}]
+        try:
+            for cmd in (0x0B, 0x0C):
+                os.write(fd, bytes([0x21, 0xBB, cmd, 0]) + bytes(27))
+            data = b""
+            end = time.monotonic() + 0.45
+            while time.monotonic() < end:
+                r, _, _ = select.select([fd], [], [], 0.12)
+                if r:
+                    try:
+                        data += os.read(fd, 64)
+                    except BlockingIOError:
+                        pass
+            level, charging = parse_hyperx(data)
+        except OSError:
+            level, charging = None, None
+        finally:
+            os.close(fd)
+        if level is not None:
+            return [{"id": "hyperx:098d", "name": "HyperX Cloud Alpha Wireless", "kind": "headset",
+                     "source": "hyperx", "level": level, "charging": bool(charging),
+                     "status": "charging" if charging else "discharging", "connection": "wireless"}]
+    return []
+
+
+# ---------------------------------------------------------------- openrazer
+
+
+def razer() -> list[dict]:
+    out = []
+    for level_path in sorted(glob.glob("/sys/bus/hid/drivers/razer*/*/charge_level")):
+        base = os.path.dirname(level_path)
+        raw = _read_text(level_path)
+        if not raw.isdigit():
+            continue
+        level = round(int(raw) * 100 / 255)
+        charging = _read_text(os.path.join(base, "charge_status")) == "1"
+        dtype = _read_text(os.path.join(base, "device_type"))
+        kind = "mouse"
+        for word, k in (("keyboard", "keyboard"), ("headset", "headset"), ("controller", "gaming-input")):
+            if word in dtype.lower():
+                kind = k
+        out.append({
+            "id": "razer:" + os.path.basename(base),
+            "name": dtype or "Razer device",
+            "kind": kind,
+            "source": "razer",
+            "level": level,
+            "charging": charging,
+            "status": "charging" if charging else ("full" if level >= 100 else "discharging"),
+            "connection": "wireless",
+        })
+    return out
+
+
+# ------------------------------------------------------------------ UPower
+
+# The laptop's own battery and power supplies belong to omarchy.power.
+UPOWER_SKIP_KINDS = {"line-power", "battery", "ups", "monitor"}
+UPOWER_STATES = {
+    "charging": "charging",
+    "pending-charge": "charging",
+    "fully-charged": "full",
+    "discharging": "discharging",
+    "pending-discharge": "discharging",
+    "empty": "discharging",
+}
+
+
+def parse_upower_dump(text: str) -> list[dict]:
+    out = []
+    for block in re.split(r"\n(?=Device: )", text):
+        if not block.startswith("Device: ") or block.startswith("Device: /org/freedesktop/UPower/devices/DisplayDevice"):
+            continue
+        props: dict[str, str] = {}
+        kind = ""
+        for line in block.splitlines()[1:]:
+            m = re.match(r"^\s+([a-z][a-z -]*?):\s+(.*)$", line)
+            if m:
+                props.setdefault(m.group(1), m.group(2).strip().strip("'"))
+            elif re.match(r"^  [a-z-]+$", line):
+                kind = line.strip()
+        if not kind or kind in UPOWER_SKIP_KINDS or props.get("power supply") == "yes":
+            continue
+        if props.get("present", "yes") == "no":
+            continue
+        pm = re.match(r"(\d+(?:\.\d+)?)%", props.get("percentage", ""))
+        level = round(float(pm.group(1))) if pm else None
+        state = UPOWER_STATES.get(props.get("state", ""), "unknown")
+        native = props.get("native-path", "")
+        name = props.get("model") or props.get("vendor") or kind.replace("-", " ").title()
+        connection = "bluetooth" if "bluez" in native or native.startswith("/org/bluez") else "wireless"
+        out.append({
+            "id": "upower:" + (native or block.splitlines()[0][8:]),
+            "name": name,
+            "kind": kind,
+            "source": "upower",
+            "level": level,
+            "charging": state == "charging",
+            "status": state if level is not None else "unknown",
+            "connection": connection,
+        })
+    return out
+
+
+def upower() -> list[dict]:
+    if not shutil.which("upower"):
+        return []
+    try:
+        res = subprocess.run(["upower", "--dump"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return parse_upower_dump(res.stdout)
+
+
+# ----------------------------------------------------------- HeadsetControl
+
+
+def parse_headsetcontrol(text: str) -> list[dict]:
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    out = []
+    for d in data.get("devices", []):
+        battery = d.get("battery") or {}
+        bstatus = str(battery.get("status", ""))
+        if d.get("status") != "success" or bstatus in ("", "BATTERY_UNAVAILABLE"):
+            continue
+        level = battery.get("level")
+        level = int(level) if isinstance(level, (int, float)) and 0 <= level <= 100 else None
+        charging = bstatus == "BATTERY_CHARGING"
+        out.append({
+            "id": "headsetcontrol:%s:%s" % (d.get("id_vendor", ""), d.get("id_product", "")),
+            "name": d.get("product") or d.get("device") or "Headset",
+            "kind": "headset",
+            "source": "headsetcontrol",
+            "level": level,
+            "charging": charging,
+            "status": "charging" if charging else "discharging",
+            "connection": "wireless",
+        })
+    return out
+
+
+def headsetcontrol() -> list[dict]:
+    if not shutil.which("headsetcontrol"):
+        return []
+    try:
+        res = subprocess.run(["headsetcontrol", "-o", "json"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return parse_headsetcontrol(res.stdout)
+
+
+# -------------------------------------------------------------------- main
+
+
+def merge(groups: list[list[dict]]) -> list[dict]:
+    """First source wins when two report the same device name."""
+    seen: set[str] = set()
+    out = []
+    for group in groups:
+        for dev in group:
+            key = re.sub(r"[^a-z0-9]", "", dev["name"].lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(dev)
+    return out
+
+
+def probe() -> dict:
+    nodes = hidraw_nodes()
+    denied: list[str] = []
+    groups = [
+        glorious_wireless(nodes, denied),
+        glorious_wired(nodes, denied),
+        hyperx(nodes, denied),
+        razer(),
+        upower(),
+        headsetcontrol(),
+    ]
+    return {
+        "devices": merge(groups),
+        "needsAccess": sorted(set(denied)),
+        "udevInstalled": os.path.exists(UDEV_DEST),
+        "time": int(time.time()),
+    }
+
+
+def cmd_list() -> int:
+    result = probe()
+    if not result["devices"]:
+        print("No battery-powered peripherals found.")
+    for d in result["devices"]:
+        level = "--" if d["level"] is None else "%d%%" % d["level"]
+        bolt = " ⚡" if d["charging"] else ""
+        print("%-34s %-9s %5s%s  %s, %s via %s" % (d["name"], d["kind"], level, bolt, d["status"], d["connection"], d["source"]))
+    if result["needsAccess"]:
+        print("\nNo access to " + ", ".join(result["needsAccess"]) + ". Run: sudo %s install-udev" % os.path.realpath(__file__))
+    return 0
+
+
+def cmd_install_udev() -> int:
+    if os.geteuid() != 0:
+        print("install-udev must run as root (sudo or pkexec).", file=sys.stderr)
+        return 1
+    shutil.copyfile(UDEV_RULES, UDEV_DEST)
+    os.chmod(UDEV_DEST, 0o644)
+    subprocess.run(["udevadm", "control", "--reload-rules"], check=False)
+    subprocess.run(["udevadm", "trigger", "--subsystem-match=hidraw", "--action=change"], check=False)
+    print("Installed " + UDEV_DEST)
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    cmd = argv[1] if len(argv) > 1 else "probe"
+    if cmd == "probe":
+        print(json.dumps(probe()))
+        return 0
+    if cmd == "list":
+        return cmd_list()
+    if cmd == "install-udev":
+        return cmd_install_udev()
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

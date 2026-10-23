@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.t3lluz.peripheral-battery",
+  "name": "Peripheral Battery",
+  "version": "1.0.0",
+  "author": "fredde",
+  "license": "MIT",
+  "description": "Battery for your mouse and other wireless peripherals in the Omarchy bar: a charging bolt on the USB cable, the level on 2.4 GHz or Bluetooth. Reads Glorious and HyperX over HID directly, plus anything UPower, openrazer or HeadsetControl sees.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Peripheral Battery",
+    "description": "Your mouse's battery in the bar, with a bolt while it charges. Click for every peripheral's level.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "device": "",
+      "showPercent": true,
+      "hideWhenEmpty": true,
+      "lowThreshold": 20,
+      "notifyLow": true,
+      "refreshIntervalSec": 30
+    },
+    "schema": [
+      {
+        "key": "device",
+        "type": "string",
+        "label": "Bar device",
+        "description": "Device id to show in the bar. Leave empty for the first mouse found; clicking a device in the panel fills this in.",
+        "defaultValue": ""
+      },
+      {
+        "key": "showPercent",
+        "type": "boolean",
+        "label": "Show the percentage next to the icon",
+        "defaultValue": true
+      },
+      {
+        "key": "hideWhenEmpty",
+        "type": "boolean",
+        "label": "Hide the widget when no device is found",
+        "defaultValue": true
+      },
+      {
+        "key": "lowThreshold",
+        "type": "integer",
+        "label": "Low battery level (%)",
+        "min": 5,
+        "max": 50,
+        "step": 5,
+        "defaultValue": 20
+      },
+      {
+        "key": "notifyLow",
+        "type": "boolean",
+        "label": "Notify when a device runs low",
+        "defaultValue": true
+      },
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "description": "Plugging or unplugging a device refreshes right away regardless.",
+        "min": 5,
+        "max": 300,
+        "step": 5,
+        "defaultValue": 30
+      }
+    ]
+  }
+}
