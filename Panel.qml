@@ -16,6 +16,8 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
   property var client: null
+  // The host widget's WidgetSettings: shell.json as every monitor sees it.
+  property var prefs: null
   property bool setupOpen: false
 
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
@@ -30,9 +32,13 @@ Panel {
   readonly property var devices: client ? client.devices : []
   readonly property int lowThreshold: hostWidget ? hostWidget.lowThreshold : 20
   readonly property bool needsAccess: !!client && client.needsAccess.length > 0
-  readonly property var barDevices: Array.isArray(settings ? settings.barDevices : null) ? settings.barDevices : null
+  readonly property var barDevices: Model.idList(setting("barDevices", null))
 
   readonly property var thresholds: [5, 10, 15, 20, 25, 30]
+  readonly property real historyHours: 12
+  readonly property var history: client ? client.history : []
+  // Null until half an hour on battery has been seen.
+  readonly property var drain: Model.drainPerHour(history, Date.now() / 1000, historyHours)
   // Every row's icon box and the gap to its text, so sections line up.
   readonly property real iconSize: Style.font.display
   readonly property real iconGap: Style.space(12)
@@ -50,6 +56,8 @@ Panel {
     }
     return opts
   }
+
+  function setting(name, fallback) { return prefs ? prefs.get(name, fallback) : fallback }
 
   function open() { root.controller.show() }
   function close() { root.controller.hide() }
@@ -424,6 +432,47 @@ Panel {
                     }
                   }
                 }
+              }
+            }
+
+            // The last hours of charge, indented to the text column too.
+            Column {
+              visible: Model.historySince(root.history, Date.now() / 1000, root.historyHours).length > 1
+              x: root.iconSize + root.iconGap
+              width: parent.width - x
+              spacing: Style.space(4)
+
+              Item {
+                width: parent.width
+                height: Math.max(historyLabel.implicitHeight, drainLabel.implicitHeight)
+
+                Text {
+                  id: historyLabel
+                  anchors.left: parent.left
+                  textFormat: Text.PlainText
+                  text: "Last " + root.historyHours + " hours"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  id: drainLabel
+                  anchors.right: parent.right
+                  textFormat: Text.PlainText
+                  text: Model.drainText(root.drain)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              HistoryGraph {
+                width: parent.width
+                samples: root.history
+                hours: root.historyHours
+                foreground: root.foreground
+                accent: root.accent
               }
             }
           }

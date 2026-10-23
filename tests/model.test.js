@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, airpodsParts, airpodsStatus, inBar, toggleBarDevice, barItems, lowBatteryAlerts, alertables, tooltip }")()
+const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, airpodsParts, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, pushLevelSample, historySince, drainPerHour, drainText, lowBatteryAlerts, alertables, tooltip }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -136,6 +136,16 @@ assert.deepStrictEqual(Model.toggleBarDevice(null, kb.id, [mouse, kb]), [mouse.i
 assert.deepStrictEqual(Model.toggleBarDevice(null, mouse.id, [mouse, kb]), [])
 assert.deepStrictEqual(Model.toggleBarDevice([kb.id], kb.id, [mouse, kb]), [])
 assert.strictEqual(Model.inBar(mouse, null), true)
+
+// A saved pick survives however the shell hands it over: a real array, an
+// array-like Qt sequence (which fails Array.isArray), or nothing yet.
+assert.deepStrictEqual(Model.idList([kb.id]), [kb.id])
+assert.deepStrictEqual(Model.idList({ length: 1, 0: kb.id }), [kb.id])
+assert.deepStrictEqual(Model.idList({ length: 0 }), [])
+assert.strictEqual(Model.idList(null), null)
+assert.strictEqual(Model.idList(undefined), null)
+assert.strictEqual(Model.idList("mouse"), null)
+assert.strictEqual(Model.inBar(mouse, Model.idList({ length: 0 })), false)
 assert.strictEqual(Model.inBar(kb, null), false)
 
 // AirPods join the low-battery watch only while fresh.
@@ -145,5 +155,31 @@ assert.strictEqual(Model.alertables(Object.assign({}, state, { airpods: podsKept
 assert.ok(Model.tooltip(state).includes("Laptop  64%"))
 assert.ok(Model.tooltip(state).includes("Left 80%"))
 assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
+
+// History: a sample every two minutes or on a change, a day kept.
+{
+  let h = []
+  h = Model.pushLevelSample(h, 1000, 80, false)
+  h = Model.pushLevelSample(h, 1060, 80, false)
+  assert.strictEqual(h.length, 1)
+  h = Model.pushLevelSample(h, 1070, 79, false)
+  assert.strictEqual(h.length, 2)
+  h = Model.pushLevelSample(h, 1080, 79, true)
+  assert.strictEqual(h.length, 3)
+  h = Model.pushLevelSample(h, 1080 + 25 * 3600, 60, false)
+  assert.deepStrictEqual(h, [[1080 + 25 * 3600, 60, 0]])
+  assert.deepStrictEqual(Model.pushLevelSample([], 5, null, false), [])
+  assert.deepStrictEqual(Model.parseHistory('{"samples":[[1,50,0],[2,"x",1],[3,120,0],[4,40,1]]}'), [[1, 50, 0], [4, 40, 1]])
+  assert.deepStrictEqual(Model.parseHistory("nope"), [])
+  // 10 points an hour over an hour on battery; the charging stretch is left out.
+  const run = []
+  for (let i = 0; i <= 6; i++) run.push([i * 600, 90 - i * (10 / 6), 0])
+  run.push([4200, 80, 1], [4800, 85, 1])
+  assert.strictEqual(Math.round(Model.drainPerHour(run, 4800, 12)), 10)
+  assert.strictEqual(Model.drainPerHour(run.slice(0, 2), 600, 12), null)
+  assert.strictEqual(Model.drainText(10.4), "10% an hour on battery")
+  assert.strictEqual(Model.drainText(4.26), "4.3% an hour on battery")
+  assert.strictEqual(Model.historySince(run, 4800, 0.5).length, 4)
+}
 
 console.log("model tests passed")

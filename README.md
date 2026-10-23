@@ -1,49 +1,51 @@
-# Batteries
+<div align="center">
+  <img src="assets/icon.svg" width="72" height="72" alt="Batteries" />
+  <h1>Batteries</h1>
+  <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
+  <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
+  <p>
+    <img alt="Version" src="https://img.shields.io/badge/v2.1.0-111111?label=version" />
+    <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
+    <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
+    <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-34413e" />
+  </p>
+  <p><a href="#install"><b>Install</b></a> · <a href="#features">Features</a> · <a href="#supported-batteries">Supported batteries</a> · <a href="#settings">Settings</a> · <a href="#commands">Commands</a></p>
+  <img src="assets/preview.png" width="380" alt="The Batteries panel: laptop with its last 12 hours, AirPods bud by bud, and a mouse" />
+</div>
 
-An Omarchy bar widget for every battery on and around your computer: the
-laptop, AirPods, and your mouse, keyboard, headset, controller and phone.
+## Features
 
-The bar shows the batteries you pick, each as an icon and level, with a
-charging bolt while it charges. Pick what it shows from the gear in the
-panel, the same way as in
-[Server Dashboard](https://github.com/T3lluz/omarchy-server-dashboard):
+- **The bar shows what you pick:** laptop level, its charge or discharge rate in watts, time left or to full, AirPods (the emptier bud) and their case, any peripheral one toggle each, percentages on or off. A bolt shows while something charges.
+- **Laptop:** level with the charge limit marked, the rate, energy in Wh, health against the design capacity, cycles, charge limit and power source.
+- **Charge history:** the last 12 hours as a graph, charging stretches in the accent colour, and your average drain on battery. It is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
+- **AirPods:** each bud and the case with level, charging and in-ear state, or an AirPods Max's single battery. Last seen levels stay, dimmed, once they are back in the case.
+- **Devices:** every peripheral with a level bar, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
+- **Live:** plugging a cable or the charger in or out refreshes within a second or two (it listens to udev), as does any change librepods reports for your AirPods.
+- **Low battery:** one notification when a peripheral or your AirPods drop below the threshold. The laptop keeps Omarchy's own warning.
+- **Every monitor agrees:** the bar draws the widget once per screen; they share one poller and read their settings straight from `shell.json`, so a choice made on one screen shows on all of them and survives a restart.
+- Icons are [Tabler](https://tabler.io/icons) outlines drawn in your theme's colours, so they never depend on the Nerd Font build. The AirPods outline is the one from [omapods](https://github.com/thisisgm/omarchy-pods), picked by model.
 
-- Laptop battery level
-- Laptop charge or discharge rate, in watts
-- Laptop time left, or time to full
-- AirPods (the emptier bud) and the AirPods case
-- Any peripheral, one toggle each (every mouse until you pick)
-- Percentages on or off
+## Install
 
-Click it for the panel:
+```bash
+omarchy plugin add https://github.com/T3lluz/omarchy-batteries.git --enable
+```
 
-- **Laptop**: level with the charge limit marked, charging or on battery with
-  the time left or time to full, the rate in watts, energy in Wh, health
-  against the design capacity, cycle count, charge limit, and power source.
-- **AirPods**: each bud and the case with its level, charging and in-ear
-  state, or an AirPods Max's single battery. Last seen levels stay, dimmed,
-  after they go back in the case.
-- **Devices**: every peripheral with a level bar, its state and how it is
-  connected (USB cable, 2.4 GHz or Bluetooth). Click one to show or hide it in
-  the bar.
+Glorious and HyperX devices need read access to their HID node. Click the bar icon and press **Grant access** (it asks for your password once), or run:
 
-Plugging a cable or the charger in or out refreshes within a second or two
-(the widget listens to udev), as does any change librepods reports for your
-AirPods. You get one notification each time a peripheral or your AirPods drop
-below the low battery threshold. The laptop keeps Omarchy's own warning.
+```bash
+sudo ~/.config/omarchy/plugins/io.github.t3lluz.batteries/bin/batteries install-udev
+```
 
-The icons are [Tabler Icons](https://tabler.io/icons) drawn as theme-colored
-strokes, so they follow your theme and do not depend on the Nerd Font build.
-The AirPods outline is the one from
-[omapods](https://github.com/thisisgm/omapods), picked by model (AirPods, Pro or
-Max).
+That installs `udev/70-omarchy-batteries.rules`, which gives the logged-in user (`uaccess`) access to those devices only. AirPods need the librepods daemon that [omapods](https://github.com/thisisgm/omarchy-pods) installs; nothing else is needed for them.
 
 ## Supported batteries
 
 | Source | Batteries |
 |---|---|
 | sysfs + UPower | The laptop's own battery (two-battery laptops are combined) |
-| librepods | AirPods, AirPods Pro and AirPods Max, through the daemon [omapods](https://github.com/thisisgm/omapods) installs |
+| librepods | AirPods, AirPods Pro and AirPods Max, through the daemon omapods installs |
 | Built in, HID | Glorious Model O, O-, D and D- Wireless, on the cable (charging) and on the dongle |
 | Built in, HID | HyperX Cloud Alpha Wireless |
 | UPower | Bluetooth mice, keyboards and headsets, Logitech Lightspeed/Unifying (HID++), PlayStation and Switch controllers, Apple Magic devices, Wacom tablets, UPSes |
@@ -52,37 +54,9 @@ Max).
 | libimobiledevice | An iPhone or iPad on USB |
 | KDE Connect | Phones paired with KDE Connect |
 
-If one device is reported by two sources, the first in this table wins. The
-librepods reading of your AirPods beats BlueZ's single headset level.
+If one device is reported by two sources, the first in this table wins. The librepods reading of your AirPods beats BlueZ's single headset level.
 
-The Glorious reader speaks the protocol from
-[korkje/mow](https://github.com/korkje/mow) and
-[gloriousctl](https://github.com/ibericode/gloriousctl), and the HyperX one the
-protocol from
-[streamdeck-hyperx-caw-battery](https://github.com/T3lluz/streamdeck-hyperx-caw-battery-Linux).
-It was first written for
-[streamdeck-glorious-model-o-battery-Linux](https://github.com/T3lluz/streamdeck-glorious-model-o-battery-Linux).
-It talks to `/dev/hidraw` through the kernel's ioctls directly, so the reader
-needs only Python's standard library.
-
-## Install
-
-```sh
-omarchy plugin add https://github.com/T3lluz/omarchy-batteries.git --enable
-```
-
-Glorious and HyperX devices need read access to their HID node. Click the bar
-icon and press **Grant access** (it asks for your password once), or run:
-
-```sh
-sudo ~/.config/omarchy/plugins/io.github.t3lluz.batteries/bin/batteries install-udev
-```
-
-That installs `udev/70-omarchy-batteries.rules`, which gives the logged-in
-user (`uaccess`) access to those devices only.
-
-AirPods need the librepods daemon from omapods running; nothing else is
-needed for them.
+The Glorious reader speaks the protocol from [korkje/mow](https://github.com/korkje/mow) and [gloriousctl](https://github.com/ibericode/gloriousctl), and the HyperX one the protocol from [streamdeck-hyperx-caw-battery](https://github.com/T3lluz/streamdeck-hyperx-caw-battery-Linux). It talks to `/dev/hidraw` through the kernel's ioctls directly, so it needs only Python's standard library.
 
 ## Use
 
@@ -91,9 +65,11 @@ needed for them.
 | Click | Open the panel |
 | Middle click | Refresh now |
 | `r` in the panel | Refresh |
-| `c` in the panel | What the bar shows, low battery |
+| `c` or `,` in the panel | Settings: what the bar shows, low battery |
 
-Settings are saved in the widget's entry in `~/.config/omarchy/shell.json`:
+## Settings
+
+Pick them from the gear in the panel. They are saved in the widget's entry in `~/.config/omarchy/shell.json`:
 
 | Key | Default | |
 |---|---|---|
@@ -108,9 +84,18 @@ Settings are saved in the widget's entry in `~/.config/omarchy/shell.json`:
 | `notifyLow` | `true` | Notify when a peripheral or AirPods cross it |
 | `refreshIntervalSec` | `30` | Poll interval; 10 s with rate or time in the bar, 5 s while the panel is open |
 
-## Command line
+## Commands
 
-```sh
+```bash
+omarchy-shell io.github.t3lluz.batteries toggle     # open on the focused monitor; open | close
+omarchy-shell io.github.t3lluz.batteries settings   # open on the settings view
+omarchy-shell io.github.t3lluz.batteries refresh
+omarchy-shell io.github.t3lluz.batteries status     # JSON: what the bar shows, every battery
+```
+
+The reader works on its own too:
+
+```bash
 bin/batteries list     # human readable
 bin/batteries probe    # the JSON the widget reads
 ```
@@ -123,13 +108,17 @@ Glorious Model O Wireless          mouse       83% ⚡  charging, usb via glorio
 
 ## Development
 
-```sh
+```bash
 node tests/model.test.js
-python3 -m unittest discover tests
+python3 -B -m unittest discover tests
 python3 scripts/fetch-icons.py    # refetch the Tabler icons, regenerate Icons.js
+omarchy restart shell             # pick up QML changes
 ```
+
+`Model.js` holds the pure logic and is tested under node; `bin/batteries` is the reader. See [AGENTS.md](AGENTS.md) for how the pieces fit.
 
 ## License
 
-MIT. `AirPodsIcon.qml` is from omapods (MIT, © 2026 GM). Tabler Icons are MIT.
-Not affiliated with Apple, Glorious, HyperX or Razer.
+MIT. `AirPodsIcon.qml` is from omapods (MIT, © 2026 GM). Tabler Icons are MIT. Not affiliated with Apple, Glorious, HyperX or Razer.
+
+One of a set of Omarchy plugins: **Batteries** · [ROG Deck](https://github.com/T3lluz/omarchy-rog-deck) · [Sonus](https://github.com/T3lluz/omarchy-sonus) · [Server Dashboard](https://github.com/T3lluz/omarchy-server-dashboard)

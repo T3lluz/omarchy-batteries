@@ -1,4 +1,10 @@
 # Run with: python3 -m unittest discover tests
+import sys
+
+# Importing bin/batteries would leave bytecode in bin/__pycache__, inside the
+# plugin folder, and the shell reloads every plugin when a file appears there.
+sys.dont_write_bytecode = True
+
 import importlib.machinery
 import importlib.util
 import json

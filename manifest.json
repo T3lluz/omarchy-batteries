@@ -2,9 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.t3lluz.batteries",
   "name": "Batteries",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "fredde",
   "license": "MIT",
+  "homepage": "https://github.com/T3lluz/omarchy-batteries",
   "description": "Every battery in the Omarchy bar: the laptop with its charge or discharge rate, time left and health, AirPods bud by bud (via librepods), and your mouse, keyboard, headset, controller and phone. Pick what the bar shows.",
   "kinds": [
     "bar-widget"
@@ -31,14 +32,58 @@
       "refreshIntervalSec": 30
     },
     "schema": [
-      { "key": "barLaptop", "type": "boolean", "label": "Show the laptop battery in the bar", "defaultValue": true },
-      { "key": "barLaptopRate", "type": "boolean", "label": "Show the laptop's charge or discharge rate (W)", "defaultValue": false },
-      { "key": "barLaptopTime", "type": "boolean", "label": "Show the laptop's time left or time to full", "defaultValue": false },
-      { "key": "barAirpods", "type": "boolean", "label": "Show AirPods (the emptier bud)", "description": "Needs the librepods daemon, which omapods installs.", "defaultValue": true },
-      { "key": "barAirpodsCase", "type": "boolean", "label": "Show the AirPods case", "defaultValue": false },
-      { "key": "barPercent", "type": "boolean", "label": "Show percentages next to the icons", "defaultValue": true },
-      { "key": "lowThreshold", "type": "integer", "label": "Low battery level (%)", "min": 5, "max": 50, "step": 5, "defaultValue": 20 },
-      { "key": "notifyLow", "type": "boolean", "label": "Notify when a device or AirPods run low", "defaultValue": true },
+      {
+        "key": "barLaptop",
+        "type": "boolean",
+        "label": "Show the laptop battery in the bar",
+        "defaultValue": true
+      },
+      {
+        "key": "barLaptopRate",
+        "type": "boolean",
+        "label": "Show the laptop's charge or discharge rate (W)",
+        "defaultValue": false
+      },
+      {
+        "key": "barLaptopTime",
+        "type": "boolean",
+        "label": "Show the laptop's time left or time to full",
+        "defaultValue": false
+      },
+      {
+        "key": "barAirpods",
+        "type": "boolean",
+        "label": "Show AirPods (the emptier bud)",
+        "description": "Needs the librepods daemon, which omapods installs.",
+        "defaultValue": true
+      },
+      {
+        "key": "barAirpodsCase",
+        "type": "boolean",
+        "label": "Show the AirPods case",
+        "defaultValue": false
+      },
+      {
+        "key": "barPercent",
+        "type": "boolean",
+        "label": "Show percentages next to the icons",
+        "defaultValue": true
+      },
+      {
+        "key": "lowThreshold",
+        "type": "integer",
+        "label": "Low battery level (%)",
+        "min": 5,
+        "max": 50,
+        "step": 5,
+        "defaultValue": 20
+      },
+      {
+        "key": "notifyLow",
+        "type": "boolean",
+        "label": "Notify when a device or AirPods run low",
+        "defaultValue": true
+      },
       {
         "key": "refreshIntervalSec",
         "type": "integer",

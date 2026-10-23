@@ -227,6 +227,20 @@ function airpodsStatus(pods) {
 
 // ---------------------------------------------------------------- the bar
 
+// A saved barDevices value as a plain array of ids, or null for "not picked
+// yet". The shell can hand a list over as a Qt sequence, which is array-like
+// but fails Array.isArray; treating that as null threw the pick away.
+function idList(value) {
+  if (value === null || value === undefined || typeof value === "string") return null
+  if (Array.isArray(value)) return value.slice()
+  if (typeof value === "object" && typeof value.length === "number") {
+    var out = []
+    for (var i = 0; i < value.length; i++) out.push(String(value[i]))
+    return out
+  }
+  return null
+}
+
 // The bar's peripherals: an explicit id list, or every mouse while the
 // user has not picked any (`ids` null).
 function inBar(device, ids) {
@@ -355,3 +369,57 @@ function tooltip(state) {
   }
   return lines.length ? lines.join("\n") : "No batteries found"
 }
+
+// ---------------------------------------------------------------- history
+
+// The laptop's level over time, for the panel's graph: [[unixSeconds, level,
+// charging 0/1], ...], oldest first. A sample is kept every `gap` seconds,
+// or sooner when the level or charging changes, for `keep` seconds.
+var HISTORY_GAP = 120
+var HISTORY_KEEP = 24 * 3600
+
+function parseHistory(text) {
+  var data
+  try { data = JSON.parse(String(text || "")) } catch (e) { return [] }
+  var list = data && Array.isArray(data.samples) ? data.samples : []
+  return list.filter(function(s) {
+    return Array.isArray(s) && s.length >= 3 && isFinite(s[0]) && isFinite(s[1]) && s[1] >= 0 && s[1] <= 100
+  }).map(function(s) { return [Math.round(s[0]), Math.round(s[1]), s[2] ? 1 : 0] })
+}
+
+function pushLevelSample(history, nowSec, level, charging) {
+  var list = (history || []).filter(function(s) { return nowSec - s[0] <= HISTORY_KEEP && s[0] <= nowSec })
+  if (!hasLevel(level)) return list
+  var sample = [Math.round(nowSec), Math.round(level), charging ? 1 : 0]
+  var last = list.length ? list[list.length - 1] : null
+  if (last && sample[0] - last[0] < HISTORY_GAP && last[1] === sample[1] && last[2] === sample[2]) return list
+  list.push(sample)
+  return list
+}
+
+function historySince(history, nowSec, hours) {
+  var from = nowSec - hours * 3600
+  return (history || []).filter(function(s) { return s[0] >= from })
+}
+
+// Average drain on battery over the window, in % per hour, from the runs of
+// discharging samples (a gap over 15 minutes, a suspend, ends a run). Null
+// until half an hour on battery has been seen.
+function drainPerHour(history, nowSec, hours) {
+  var list = historySince(history, nowSec, hours)
+  var dropped = 0, seconds = 0
+  for (var i = 1; i < list.length; i++) {
+    var a = list[i - 1], b = list[i]
+    if (a[2] || b[2] || b[0] - a[0] > 900 || b[1] > a[1]) continue
+    dropped += a[1] - b[1]
+    seconds += b[0] - a[0]
+  }
+  if (seconds < 1800) return null
+  return dropped / (seconds / 3600)
+}
+
+function drainText(perHour) {
+  if (perHour === null || perHour === undefined) return ""
+  return (perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10) + "% an hour on battery"
+}
+

@@ -30,8 +30,14 @@ Item {
 
   readonly property var state: ({ laptop: laptop, airpods: airpods, devices: devices })
   readonly property string scriptPath: decodeURIComponent(Qt.resolvedUrl("bin/batteries").toString().replace(/^file:\/\//, ""))
-  readonly property string podsStatePath: (Quickshell.env("XDG_STATE_HOME")
-    || Quickshell.env("HOME") + "/.local/state") + "/librepods/status.json"
+  readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state"
+  readonly property string podsStatePath: stateHome + "/librepods/status.json"
+  // The laptop's level over the last day (Model.pushLevelSample), kept on
+  // disk so the panel's graph survives a restart.
+  readonly property string historyDir: stateHome + "/omarchy-batteries"
+  readonly property string historyPath: historyDir + "/history.json"
+  property var history: []
+  property bool historyLoaded: false
 
   PersistentProperties {
     id: persisted
@@ -65,6 +71,13 @@ Item {
     devices = next
     airpods = pods
     laptop = parsed.laptop
+    if (laptop && historyLoaded) {
+      var grown = Model.pushLevelSample(history, Date.now() / 1000, laptop.level, laptop.charging)
+      if (grown.length !== history.length || grown[grown.length - 1] !== history[history.length - 1]) {
+        history = grown
+        historySave.restart()
+      }
+    }
     persisted.lastDevices = next
     if (pods && pods.known) persisted.lastAirpods = pods
     needsAccess = parsed.needsAccess
@@ -131,6 +144,35 @@ Item {
     interval: 400
     onTriggered: root.pollNow()
   }
+
+  Process {
+    id: historyMkdir
+    command: ["mkdir", "-p", root.historyDir]
+    running: true
+    onExited: historyFile.reload()
+  }
+
+  FileView {
+    id: historyFile
+    path: root.historyPath
+    blockLoading: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      root.history = Model.parseHistory(text())
+      root.historyLoaded = true
+    }
+    onLoadFailed: root.historyLoaded = true
+  }
+
+  // At most once a minute: a sample lands every couple of minutes anyway.
+  Timer {
+    id: historySave
+    interval: 60000
+    onTriggered: historyFile.setText(JSON.stringify({ version: 1, samples: root.history }) + "\n")
+  }
+
+  Component.onDestruction: if (historySave.running) historyFile.setText(JSON.stringify({ version: 1, samples: root.history }) + "\n")
 
   Process {
     id: probeProc

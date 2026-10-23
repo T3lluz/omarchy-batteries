@@ -18,7 +18,7 @@ BarWidget {
     laptopTime: setting("barLaptopTime", false) === true,
     airpods: setting("barAirpods", true) === true,
     airpodsCase: setting("barAirpodsCase", false) === true,
-    devices: Array.isArray(settings ? settings.barDevices : null) ? settings.barDevices : null,
+    devices: Model.idList(setting("barDevices", null)),
     percent: setting("barPercent", true) === true,
     lowThreshold: lowThreshold
   })
@@ -45,16 +45,10 @@ BarWidget {
     return barFg
   }
 
-  // Persists inline settings to this widget's shell.json entry, applied
-  // locally first so the panel reacts on the click itself.
-  function persistSettings(values) {
-    var entry = { id: root.moduleName }
-    for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
-    for (var key in values) entry[key] = values[key]
-    root.settings = entry
-    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
-      root.bar.shell.updateEntryInline(root.moduleName, entry)
-  }
+  // Settings come from shell.json itself rather than the bar's copy, so
+  // every monitor agrees and a list survives a restart (WidgetSettings.qml).
+  function setting(name, fallback) { return prefs.get(name, fallback) }
+  function persistSettings(values) { prefs.save(values) }
 
   function electLeader() {
     var items = bar && typeof bar.moduleWidgets === "function" ? bar.moduleWidgets(moduleName) : []
@@ -76,6 +70,20 @@ BarWidget {
   function close() { if (panelLoader.item) panelLoader.item.close() }
   function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
   function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
+
+  // summon, hide or toggle through the shell; this widget's own panel when
+  // there is no shell to ask.
+  function summon(how) {
+    var shell = root.bar ? root.bar.shell : null
+    var done = false
+    if (shell && how === "summon" && typeof shell.summon === "function") done = shell.summon(root.moduleName, "{}")
+    else if (shell && how === "hide" && typeof shell.hide === "function") done = shell.hide(root.moduleName)
+    else if (shell && how === "toggle" && typeof shell.toggle === "function") done = shell.toggle(root.moduleName, "{}")
+    if (done) return
+    if (how === "summon") root.open()
+    else if (how === "hide") root.close()
+    else root.toggle()
+  }
   function refresh() { if (client) client.pollNow() }
   function prepareSettings() { if (panelLoader.item) panelLoader.item.setupOpen = true }
 
@@ -83,7 +91,7 @@ BarWidget {
     var target = panelLoader.item
     if (!target) return
     target.bar = root.bar
-    target.settings = root.settings
+    target.prefs = prefs
     target.anchorItem = button
     target.hostWidget = root
     target.client = root.client
@@ -100,7 +108,6 @@ BarWidget {
   implicitHeight: button.implicitHeight
 
   onBarChanged: { electLeader(); injectPanel() }
-  onSettingsChanged: injectPanel()
   onClientChanged: injectPanel()
   onOpenedChanged: syncOpenCount()
   Component.onCompleted: electLeader()
@@ -112,6 +119,13 @@ BarWidget {
     repeat: true
     running: true
     onTriggered: root.electLeader()
+  }
+
+  WidgetSettings {
+    id: prefs
+    moduleName: root.moduleName
+    injected: root.settings
+    shell: root.bar ? root.bar.shell : null
   }
 
   Loader {
@@ -140,16 +154,16 @@ BarWidget {
   IpcHandler {
     target: "io.github.t3lluz.batteries"
 
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
+    // Through the shell, which opens the panel on the focused monitor; this
+    // handler belongs to whichever monitor's widget registered first.
+    function open(): void { root.summon("summon") }
+    function close(): void { root.summon("hide") }
+    function show(): void { root.summon("summon") }
+    function hide(): void { root.summon("hide") }
+    function toggle(): void { root.summon("toggle") }
     function settings(): void {
       root.broadcast("prepareSettings")
-      var shell = root.bar ? root.bar.shell : null
-      if (shell && typeof shell.summon === "function") shell.summon(root.moduleName, "{}")
-      else root.open()
+      root.summon("summon")
     }
     function refresh(): string { root.refresh(); return "ok" }
     function status(): string {
@@ -161,6 +175,7 @@ BarWidget {
         airpods: c ? c.airpods : null,
         devices: c ? c.devices : [],
         needsAccess: c ? c.needsAccess : [],
+        history: c ? c.history.length : 0,
         error: c ? c.errorText : "loading"
       })
     }
