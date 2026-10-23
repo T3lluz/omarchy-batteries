@@ -188,7 +188,7 @@ function laptopFacts(lap) {
   if (lap.timeToEmpty) rows.push({ icon: "clock-hour-4", label: "Time left", value: duration(lap.timeToEmpty) })
   if (lap.timeToFull) rows.push({ icon: "clock-hour-4", label: "Until " + (lap.chargeLimit ? lap.chargeLimit + "%" : "full"), value: duration(lap.timeToFull) })
   if (lap.energyFullWh) rows.push({ icon: "battery-2", label: "Energy", value: lap.energyWh + " / " + lap.energyFullWh + " Wh" })
-  if (hasLevel(lap.health)) rows.push({ icon: "heartbeat", label: "Health", value: lap.health + "% of " + lap.energyDesignWh + " Wh design" })
+  if (hasLevel(lap.health)) rows.push({ icon: "heartbeat", label: "Health", value: lap.health + "% of " + lap.energyDesignWh + " Wh" })
   if (lap.cycles) rows.push({ icon: "repeat", label: "Cycles", value: String(lap.cycles) })
   if (lap.chargeLimit) rows.push({ icon: "battery-eco", label: "Charge limit", value: (lap.chargeStart ? lap.chargeStart + "–" : "") + lap.chargeLimit + "%" })
   rows.push({ icon: lap.acOnline ? "plug-connected" : "plug", label: "Power", value: lap.acOnline ? "AC adapter" : "Battery" })

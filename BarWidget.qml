@@ -183,7 +183,7 @@ BarWidget {
     Row {
       id: content
       anchors.centerIn: parent
-      spacing: Style.space(10)
+      spacing: Style.space(5)
 
       // Nothing picked, or nothing present: the battery mark alone.
       Icon {
@@ -213,8 +213,7 @@ BarWidget {
           AirPodsIcon {
             visible: modelData.icon === "airpods"
             anchors.verticalCenter: parent.verticalCenter
-            // A pair of buds is wider than tall, so it runs a size up, as in omapods.
-            iconSize: Math.round(Style.bar.iconFont * 1.15)
+            iconSize: Style.bar.iconFont
             color: root.toneColor(modelData.tone)
             variant: Model.airpodsVariant(root.batteryState.airpods)
           }

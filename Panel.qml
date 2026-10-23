@@ -33,6 +33,9 @@ Panel {
   readonly property var barDevices: Array.isArray(settings ? settings.barDevices : null) ? settings.barDevices : null
 
   readonly property var thresholds: [5, 10, 15, 20, 25, 30]
+  // Every row's icon box and the gap to its text, so sections line up.
+  readonly property real iconSize: Style.font.display
+  readonly property real iconGap: Style.space(12)
 
   readonly property var barOptions: {
     var opts = []
@@ -83,20 +86,157 @@ Panel {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  // A level bar: a track and a fill, urgent when low.
+  // A level bar: a track, a fill, and an optional marker (the charge limit).
   component LevelBar: Rectangle {
+    id: levelBar
     property real level: 0
     property color fill: root.foreground
+    property real marker: 0
     height: Math.max(3, Style.space(4))
     radius: height / 2
     color: root.track
 
     Rectangle {
-      width: parent.width * Math.max(0, Math.min(100, parent.level || 0)) / 100
+      width: parent.width * Math.max(0, Math.min(100, levelBar.level || 0)) / 100
       height: parent.height
       radius: parent.radius
-      color: parent.fill
+      color: levelBar.fill
       Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+    }
+
+    Rectangle {
+      visible: levelBar.marker > 0 && levelBar.marker < 100
+      x: levelBar.width * levelBar.marker / 100 - width / 2
+      anchors.verticalCenter: parent.verticalCenter
+      width: Math.max(2, Style.space(2))
+      height: parent.height * 2.4
+      radius: width / 2
+      color: root.dim
+    }
+  }
+
+  // One battery: icon, name over status, level on the right, bar beneath.
+  // Laptop, AirPods and every device use it, so they line up.
+  component BatteryRow: Column {
+    id: batteryRow
+    property string icon: "battery"
+    property bool airpods: false
+    property string variant: "buds"
+    property string title: ""
+    property string subtitle: ""
+    property string subtitleIcon: ""
+    property var level: null
+    property bool charging: false
+    property color tint: root.foreground
+    property bool showBar: true
+    property real marker: 0
+    readonly property bool hasLevel: Model.hasLevel(level)
+
+    width: parent ? parent.width : 0
+    spacing: Style.space(6)
+
+    Item {
+      width: parent.width
+      height: Math.max(iconBox.height, texts.implicitHeight)
+
+      Item {
+        id: iconBox
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: root.iconSize
+        height: root.iconSize
+
+        Icon {
+          visible: !batteryRow.airpods
+          anchors.centerIn: parent
+          name: batteryRow.icon
+          size: root.iconSize
+          color: root.foreground
+        }
+
+        AirPodsIcon {
+          visible: batteryRow.airpods
+          anchors.centerIn: parent
+          iconSize: root.iconSize
+          color: root.foreground
+          variant: batteryRow.variant
+        }
+      }
+
+      Column {
+        id: texts
+        anchors.left: iconBox.right
+        anchors.leftMargin: root.iconGap
+        anchors.right: levelRow.left
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(2)
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: batteryRow.title
+          elide: Text.ElideRight
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+        }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(4)
+
+          Icon {
+            visible: batteryRow.subtitleIcon !== ""
+            anchors.verticalCenter: parent.verticalCenter
+            name: batteryRow.subtitleIcon || "battery"
+            size: Style.font.caption
+            color: root.dim
+          }
+
+          Text {
+            width: parent.width - (batteryRow.subtitleIcon !== "" ? Style.font.caption + parent.spacing : 0)
+            textFormat: Text.PlainText
+            text: batteryRow.subtitle
+            elide: Text.ElideRight
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+      }
+
+      Row {
+        id: levelRow
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(4)
+
+        BoltIcon {
+          visible: batteryRow.charging
+          anchors.verticalCenter: parent.verticalCenter
+          implicitHeight: Math.round(Style.font.title * 1.05)
+          color: root.accent
+        }
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: Model.percent(batteryRow.level)
+          color: batteryRow.hasLevel ? batteryRow.tint : root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.title
+          font.bold: true
+        }
+      }
+    }
+
+    LevelBar {
+      visible: batteryRow.showBar
+      width: parent.width
+      level: batteryRow.hasLevel ? batteryRow.level : 0
+      fill: batteryRow.charging ? root.accent : batteryRow.tint
+      marker: batteryRow.marker
     }
   }
 
@@ -147,8 +287,8 @@ Panel {
             iconComponent: Component {
               Icon {
                 name: root.laptop ? Model.batteryIcon(root.laptop.level, root.laptop.charging) : "battery-4"
-                size: Style.font.display
-                color: root.laptop ? root.levelColor(root.laptop) : root.foreground
+                size: root.iconSize
+                color: root.foreground
               }
             }
             trailingControl: Component {
@@ -225,93 +365,21 @@ Panel {
               fontFamily: root.fontFamily
             }
 
-            Item {
-              width: parent.width
-              height: Math.max(lapIcon.height, lapText.implicitHeight)
-
-              Icon {
-                id: lapIcon
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                name: "device-laptop"
-                size: Style.font.display
-                color: root.foreground
-              }
-
-              Column {
-                id: lapText
-                anchors.left: lapIcon.right
-                anchors.leftMargin: Style.space(10)
-                anchors.right: lapLevel.left
-                anchors.rightMargin: Style.space(8)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(1)
-
-                Text {
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: Model.laptopStatus(root.laptop)
-                  elide: Text.ElideRight
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                }
-
-                Text {
-                  width: parent.width
-                  visible: !!root.laptop && root.laptop.batteries.length > 1
-                  textFormat: Text.PlainText
-                  text: root.laptop ? root.laptop.batteries.join(" + ") : ""
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-              }
-
-              Row {
-                id: lapLevel
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(4)
-
-                BoltIcon {
-                  visible: !!root.laptop && root.laptop.charging
-                  anchors.verticalCenter: parent.verticalCenter
-                  implicitHeight: Math.round(Style.font.title * 1.0)
-                  color: root.accent
-                }
-
-                Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  textFormat: Text.PlainText
-                  text: root.laptop ? Model.percent(root.laptop.level) : ""
-                  color: root.laptop ? root.levelColor(root.laptop) : root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.title
-                  font.bold: true
-                }
-              }
+            BatteryRow {
+              icon: "device-laptop"
+              title: root.laptop && root.laptop.batteries.length > 1 ? "Laptop (" + root.laptop.batteries.join(" + ") + ")" : "Laptop"
+              subtitle: Model.laptopStatus(root.laptop)
+              subtitleIcon: root.laptop && root.laptop.acOnline ? "plug-connected" : ""
+              level: root.laptop ? root.laptop.level : null
+              charging: !!root.laptop && root.laptop.charging
+              tint: root.laptop ? root.levelColor(root.laptop) : root.foreground
+              marker: root.laptop && root.laptop.chargeLimit ? root.laptop.chargeLimit : 0
             }
 
-            LevelBar {
-              width: parent.width
-              level: root.laptop ? root.laptop.level : 0
-              fill: root.laptop ? (root.laptop.charging ? root.accent : root.levelColor(root.laptop)) : root.foreground
-
-              // The charge limit, marked on the track.
-              Rectangle {
-                visible: !!root.laptop && !!root.laptop.chargeLimit
-                x: parent.width * (root.laptop && root.laptop.chargeLimit ? root.laptop.chargeLimit : 100) / 100 - width / 2
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(2, Style.space(2))
-                height: parent.height * 2.4
-                radius: width / 2
-                color: root.dim
-              }
-            }
-
+            // Details, indented to the text column above.
             Grid {
-              width: parent.width
+              x: root.iconSize + root.iconGap
+              width: parent.width - x
               columns: 2
               columnSpacing: Style.space(10)
               rowSpacing: Style.space(6)
@@ -321,7 +389,7 @@ Panel {
 
                 Row {
                   required property var modelData
-                  width: (column.width - Style.space(10)) / 2
+                  width: (parent.width - parent.columnSpacing) / 2
                   spacing: Style.space(6)
 
                   Icon {
@@ -374,52 +442,25 @@ Panel {
               fontFamily: root.fontFamily
             }
 
-            Item {
-              width: parent.width
-              height: Math.max(podsIcon.height, podsTitle.implicitHeight)
-
-              AirPodsIcon {
-                id: podsIcon
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                iconSize: Style.font.display
-                color: root.airpods && root.airpods.known && !root.airpods.stale ? root.foreground : root.dim
-                variant: Model.airpodsVariant(root.airpods)
-              }
-
-              Column {
-                id: podsTitle
-                anchors.left: podsIcon.right
-                anchors.leftMargin: Style.space(10)
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(1)
-
-                Text {
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: root.airpods ? root.airpods.name + (root.airpods.model && root.airpods.model !== root.airpods.name ? "  ·  " + root.airpods.model : "") : ""
-                  elide: Text.ElideRight
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                }
-
-                Text {
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: Model.airpodsStatus(root.airpods)
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-              }
+            BatteryRow {
+              airpods: true
+              variant: Model.airpodsVariant(root.airpods)
+              title: root.airpods ? root.airpods.name : ""
+              subtitle: root.airpods ? [root.airpods.model, Model.airpodsStatus(root.airpods)].filter(function(s) { return s !== "" && s !== root.airpods.name }).join(" · ") : ""
+              subtitleIcon: root.airpods && root.airpods.connected ? "bluetooth" : ""
+              level: root.airpods ? root.airpods.level : null
+              charging: !!root.airpods && root.airpods.charging
+              tint: root.airpods ? root.levelColor(root.airpods) : root.foreground
+              // Each part has its own bar below.
+              showBar: false
             }
 
+            // Each bud and the case, under the text column like the laptop details.
             Row {
               visible: !!root.airpods && root.airpods.known
-              width: parent.width
-              spacing: Style.space(10)
+              x: root.iconSize + root.iconGap
+              width: parent.width - x
+              spacing: Style.space(12)
 
               Repeater {
                 id: podParts
@@ -429,53 +470,35 @@ Panel {
                   required property var modelData
                   readonly property var pod: modelData.pod
                   width: (parent.width - parent.spacing * (podParts.count - 1)) / Math.max(1, podParts.count)
-                  spacing: Style.space(5)
+                  spacing: Style.space(4)
 
                   Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width
                     spacing: Style.space(4)
 
-                    Icon {
-                      visible: modelData.icon !== "airpods"
+                    Text {
                       anchors.verticalCenter: parent.verticalCenter
-                      name: modelData.icon
-                      size: Style.font.display
-                      color: pod ? root.foreground : root.dim
-                    }
-
-                    AirPodsIcon {
-                      visible: modelData.icon === "airpods"
-                      anchors.verticalCenter: parent.verticalCenter
-                      iconSize: Style.font.display
-                      color: pod ? root.foreground : root.dim
-                      variant: Model.airpodsVariant(root.airpods)
+                      textFormat: Text.PlainText
+                      text: modelData.label
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
                     }
 
                     BoltIcon {
                       visible: !!pod && pod.charging
                       anchors.verticalCenter: parent.verticalCenter
-                      implicitHeight: Math.round(Style.font.body * 1.1)
+                      implicitHeight: Style.font.caption
                       color: root.accent
                     }
                   }
 
                   Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
                     textFormat: Text.PlainText
                     text: pod ? Model.percent(pod.level) : "--"
                     color: pod ? (root.airpods.stale ? root.dim : root.levelColor(pod)) : root.dim
                     font.family: root.fontFamily
-                    font.pixelSize: Style.font.subtitle
-                    font.bold: true
-                  }
-
-                  Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    textFormat: Text.PlainText
-                    text: modelData.label + (pod && pod.inEar ? " · in ear" : "")
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
+                    font.pixelSize: Style.font.bodySmall
                   }
 
                   LevelBar {
@@ -492,7 +515,7 @@ Panel {
           Column {
             visible: !root.setupOpen && (root.devices.length > 0 || (!root.laptop && !root.airpods))
             width: parent.width
-            spacing: Style.space(4)
+            spacing: Style.space(8)
 
             PanelSeparator { foreground: root.foreground }
 
@@ -516,132 +539,16 @@ Panel {
             Repeater {
               model: root.devices
 
-              Rectangle {
-                id: row
+              BatteryRow {
                 required property var modelData
-                readonly property bool shown: Model.inBar(modelData, root.barDevices)
-                readonly property bool hasLevel: Model.hasLevel(modelData.level)
-
-                width: parent.width
-                height: rowContent.implicitHeight + Style.space(14)
-                radius: Style.cornerRadius
-                color: rowMouse.containsMouse ? Style.selectedFillFor(root.foreground, root.accent) : "transparent"
-
-                MouseArea {
-                  id: rowMouse
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.toggleDevice(row.modelData)
-                }
-
-                Column {
-                  id: rowContent
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  anchors.leftMargin: Style.space(8)
-                  anchors.rightMargin: Style.space(8)
-                  spacing: Style.space(6)
-
-                  Item {
-                    width: parent.width
-                    height: Math.max(textCol.implicitHeight, glyph.height)
-
-                    Icon {
-                      id: glyph
-                      anchors.left: parent.left
-                      anchors.verticalCenter: parent.verticalCenter
-                      name: Model.kindIcon(row.modelData.kind)
-                      size: Style.font.display
-                      color: row.modelData.stale ? root.dim : root.foreground
-                    }
-
-                    Column {
-                      id: textCol
-                      anchors.left: glyph.right
-                      anchors.leftMargin: Style.space(10)
-                      anchors.right: levelRow.left
-                      anchors.rightMargin: Style.space(8)
-                      anchors.verticalCenter: parent.verticalCenter
-                      spacing: Style.space(1)
-
-                      Text {
-                        width: parent.width
-                        textFormat: Text.PlainText
-                        text: row.modelData.name
-                        elide: Text.ElideRight
-                        color: root.foreground
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.body
-                        font.bold: row.shown
-                      }
-
-                      Row {
-                        spacing: Style.space(4)
-
-                        Icon {
-                          visible: name !== ""
-                          anchors.verticalCenter: parent.verticalCenter
-                          name: Model.connectionIcon(row.modelData.connection)
-                          size: Style.font.caption
-                          color: root.dim
-                        }
-
-                        Text {
-                          textFormat: Text.PlainText
-                          text: Model.subtitle(row.modelData)
-                          color: row.modelData.status === "no-access" ? root.urgent : root.dim
-                          font.family: root.fontFamily
-                          font.pixelSize: Style.font.caption
-                        }
-                      }
-                    }
-
-                    Row {
-                      id: levelRow
-                      anchors.right: parent.right
-                      anchors.verticalCenter: parent.verticalCenter
-                      spacing: Style.space(4)
-
-                      BoltIcon {
-                        visible: row.modelData.charging
-                        anchors.verticalCenter: parent.verticalCenter
-                        implicitHeight: Math.round(Style.font.body * 1.1)
-                        color: root.accent
-                      }
-
-                      Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        textFormat: Text.PlainText
-                        text: Model.percent(row.modelData.level)
-                        color: row.hasLevel ? root.levelColor(row.modelData) : root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.subtitle
-                        font.bold: true
-                      }
-                    }
-                  }
-
-                  LevelBar {
-                    visible: row.hasLevel
-                    width: parent.width
-                    level: row.modelData.level || 0
-                    fill: row.modelData.charging ? root.accent : root.levelColor(row.modelData)
-                  }
-                }
+                icon: Model.kindIcon(modelData.kind)
+                title: modelData.name
+                subtitle: Model.subtitle(modelData)
+                subtitleIcon: Model.connectionIcon(modelData.connection)
+                level: modelData.level
+                charging: modelData.charging
+                tint: Model.hasLevel(modelData.level) ? root.levelColor(modelData) : root.dim
               }
-            }
-
-            Text {
-              visible: root.devices.length > 0
-              width: parent.width
-              textFormat: Text.PlainText
-              text: "Click a device to show or hide it in the bar. Bold ones are shown."
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
             }
           }
 
