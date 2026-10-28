@@ -2,7 +2,8 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 
-// A level bar: a track, a fill, and an optional marker (the charge limit).
+// Panel kit: a level bar. A track, a fill for `level` (0 to 100) and an
+// optional marker, such as a charge limit.
 Rectangle {
   id: levelBar
 
@@ -13,7 +14,7 @@ Rectangle {
   property real marker: 0
 
   height: Math.max(4, Style.space(5))
-  radius: height / 2
+  radius: Style.cornerRadius > 0 ? height / 2 : 0
   color: track
 
   Rectangle {
@@ -30,7 +31,7 @@ Rectangle {
     anchors.verticalCenter: parent.verticalCenter
     width: Math.max(2, Style.space(2))
     height: parent.height + Style.space(6)
-    radius: width / 2
+    radius: Style.cornerRadius > 0 ? width / 2 : 0
     color: levelBar.markerColor
   }
 }

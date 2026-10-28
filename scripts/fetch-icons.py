@@ -31,6 +31,8 @@ ICONS = [
     "gauge", "usb", "antenna-bars-5", "bluetooth", "zzz", "ear",
     # section headers
     "layout-navbar", "chart-line", "bell", "lock-open", "percentage", "devices",
+    # updates and banners
+    "refresh", "check", "alert-triangle",
 ]
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")

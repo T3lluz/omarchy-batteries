@@ -7,7 +7,7 @@ How Batteries is put together, for anyone (or any agent) changing it. The user-f
 - `BarWidget.qml`: the bar entry, once per monitor. The first instance (the leader) loads `BatteryClient.qml`; the others read the leader's. Hosts `Panel.qml` and the IPC target.
 - `BatteryClient.qml`: polls `bin/batteries probe`, listens to udev and librepods, keeps last-seen levels, the laptop's charge history and low-battery notifications.
 - `Panel.qml`, `HistoryGraph.qml`: the panel and its charge graph.
-- `SectionHeader.qml`, `StatTile.qml`, `ToggleTile.qml`, `SwitchRow.qml`, `Seg.qml`, `Notice.qml`, `LevelBar.qml`: the panel's parts, the same as ROG Deck's (and Sonus's section headers) so the plugins look alike, with drawn Tabler icons in place of Nerd Font glyphs.
+- The panel kit (below) and the shared updater (`Updater.qml`, `Update.js`, `bin/plugin-update`).
 - `WidgetSettings.qml`: this widget's `shell.json` entry, read from the file (see below).
 - `Model.js`: parsing, the bar items, the history and alert rules. Tested by `tests/model.test.js`.
 - `bin/batteries`: the reader (Python, stdlib only): sysfs, UPower, librepods, HID for Glorious and HyperX, openrazer, HeadsetControl, libimobiledevice, KDE Connect. Tested by `tests/test_batteries.py`.
@@ -18,9 +18,18 @@ How Batteries is put together, for anyone (or any agent) changing it. The user-f
 
 ```bash
 node tests/model.test.js
+node tests/update.test.js
 python3 -B -m unittest discover tests
 omarchy-shell io.github.t3lluz.batteries status | jq
 ```
+
+## Panel kit
+
+`SectionHeader`, `StatTile`, `ToggleTile`, `SwitchRow`, `Seg`, `Notice`, `LevelBar`, `OptionRow`, `Caption` and `UpdateSection` in the plugin folder are the panel kit: the same files, byte for byte, in ROG Deck, Batteries, Sonus and Server Dashboard, so the four look like one family. Change a kit file in all four or not at all. `Glyph.qml` is the one part each plugin owns: here it draws Tabler icons by name through `Icon.qml`, where the others type Nerd Font glyphs, so kit icons in Batteries are Tabler names.
+
+`Updater.qml`, `Update.js` and `bin/plugin-update` are the shared updater (ROG Deck, Batteries and Server Dashboard; Sonus's engine updates itself the same way). It stashes local edits, untracked files too, before fast-forwarding, and drops the stash when the edits already are the update. `tests/update.test.js` and `tests/test_plugin_update.py` cover it.
+
+Panels never cut text: a `Notice` shows all of its message, a `Caption` breaks long words and paths, and a `ToggleTile` label that does not fit shows in full in its tooltip.
 
 ## Rules that are easy to break
 

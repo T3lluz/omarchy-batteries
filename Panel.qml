@@ -27,6 +27,7 @@ Panel {
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
+  readonly property var updater: client ? client.updater : null
   readonly property var laptop: client ? client.laptop : null
   readonly property var airpods: client ? client.airpods : null
   readonly property var devices: client ? client.devices : []
@@ -94,16 +95,6 @@ Panel {
   }
   onSetupOpenChanged: if (panelFlick) panelFlick.contentY = 0
 
-  // A small caption: the graph's time axis and the empty states.
-  component Caption: Text {
-    textFormat: Text.PlainText
-    color: root.foreground
-    opacity: 0.55
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    elide: Text.ElideRight
-  }
-
   // One peripheral, laid out like ROG Deck's option rows: icon, name over
   // status, the level on the right and a bar beneath.
   component DeviceRow: Column {
@@ -169,7 +160,11 @@ Panel {
           }
 
           Caption {
+            foreground: root.foreground
+            fontFamily: root.fontFamily
             width: parent.width - Style.font.caption - parent.spacing
+            wrapMode: Text.NoWrap
+            elide: Text.ElideRight
             text: deviceRow.device ? Model.subtitle(deviceRow.device) : ""
           }
         }
@@ -251,7 +246,7 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: root.setupOpen ? "Bar and alerts" : "Batteries"
+            title: root.setupOpen ? "Settings" : "Batteries"
             meta: root.heroMeta()
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -277,7 +272,7 @@ Panel {
 
                 PanelActionButton {
                   iconText: root.setupOpen ? "󰁍" : "󰒓"
-                  tooltipText: root.setupOpen ? "Back to batteries (c)" : "What the bar shows, low battery (c)"
+                  tooltipText: root.setupOpen ? "Back to batteries (c)" : "Settings: the bar, low battery and updates (c)"
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                   onClicked: root.setupOpen = !root.setupOpen
@@ -298,16 +293,35 @@ Panel {
               visible: root.needsAccess
               tone: "urgent"
               icon: "lock-open"
-              text: root.client && root.client.udevInstalled
-                ? "The rule is installed. Unplug and replug the device if this stays."
-                : "Your mouse or headset needs a udev rule to be read. It is installed once, with your password."
-              actionLabel: root.client && root.client.installing ? "Waiting…" : "Grant access"
+              text: {
+                if (root.client && root.client.installing) return "Waiting for your password to install the udev rule…"
+                if (root.client && root.client.udevInstalled) return "The rule is installed. Unplug and replug the device if this stays."
+                return "Your mouse or headset needs a udev rule to be read. It is installed once, with your password."
+              }
+              actionLabel: "Grant access"
               busy: !!root.client && root.client.installing
               foreground: root.foreground
               accent: root.accent
               urgent: root.urgent
               fontFamily: root.fontFamily
               onActioned: if (root.client) root.client.installAccess()
+            }
+
+            Notice {
+              readonly property var update: root.updater ? root.updater.notice : null
+              visible: !!update
+              tone: update ? update.tone : "accent"
+              icon: update ? update.icon : ""
+              text: update ? update.text : ""
+              actionLabel: update && update.actionLabel ? update.actionLabel : ""
+              busy: !!update && !!update.busy
+              dismissable: !!update && !!update.dismissable
+              foreground: root.foreground
+              accent: root.accent
+              urgent: root.urgent
+              fontFamily: root.fontFamily
+              onActioned: root.updater.apply()
+              onDismissed: root.updater.dismiss()
             }
 
             // ------------------------------------------------------ laptop
@@ -355,6 +369,8 @@ Panel {
                 }
 
                 Caption {
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
                   anchors.right: parent.right
                   anchors.rightMargin: Style.space(4)
                   anchors.bottom: parent.bottom
@@ -428,9 +444,9 @@ Panel {
                 width: parent.width
                 height: axisStart.implicitHeight
 
-                Caption { id: axisStart; anchors.left: parent.left; text: root.historyHours + "h ago" }
-                Caption { anchors.horizontalCenter: parent.horizontalCenter; text: root.historyHours / 2 + "h" }
-                Caption { anchors.right: parent.right; text: "now" }
+                Caption { id: axisStart; foreground: root.foreground; fontFamily: root.fontFamily; anchors.left: parent.left; text: root.historyHours + "h ago" }
+                Caption { foreground: root.foreground; fontFamily: root.fontFamily; anchors.horizontalCenter: parent.horizontalCenter; text: root.historyHours / 2 + "h" }
+                Caption { foreground: root.foreground; fontFamily: root.fontFamily; anchors.right: parent.right; text: "now" }
               }
             }
 
@@ -479,9 +495,11 @@ Panel {
             }
 
             Caption {
+              foreground: root.foreground
+              fontFamily: root.fontFamily
               visible: !!root.airpods && !root.airpods.known
               width: parent.width
-              leftPadding: Style.space(6)
+              leftPadding: Style.space(8)
               wrapMode: Text.WordWrap
               text: (root.airpods && root.airpods.model ? root.airpods.model + ". " : "") + "Connect them to see each bud and the case."
             }
@@ -502,9 +520,11 @@ Panel {
             }
 
             Caption {
+              foreground: root.foreground
+              fontFamily: root.fontFamily
               visible: root.devices.length === 0 && !root.laptop && !root.airpods
               width: parent.width
-              leftPadding: Style.space(6)
+              leftPadding: Style.space(8)
               wrapMode: Text.WordWrap
               text: root.client && root.client.loaded
                 ? "Nothing found yet. Wireless mice, keyboards, headsets, controllers and phones show up here."
@@ -606,6 +626,30 @@ Panel {
               accent: root.accent
               fontFamily: root.fontFamily
               onToggled: root.setOption("notifyLow", !checked)
+            }
+
+            PanelSeparator { foreground: root.foreground }
+
+            UpdateSection {
+              icon: "refresh"
+              autoCheckIcon: "clock-hour-4"
+              name: "Batteries"
+              version: root.updater ? root.updater.version : ""
+              line: root.updater ? root.updater.line : ""
+              available: !!root.updater && root.updater.available
+              checking: !!root.updater && root.updater.checking
+              busy: !!root.updater && root.updater.busy
+              managed: !root.updater || root.updater.managed
+              notes: root.updater ? root.updater.notes : []
+              showAutoCheck: true
+              autoCheck: root.setting("autoUpdateCheck", true) === true
+              foreground: root.foreground
+              accent: root.accent
+              fontFamily: root.fontFamily
+              onVisibleChanged: if (visible && root.updater && !root.updater.check && !root.updater.checking) root.updater.checkNow()
+              onCheckRequested: root.updater.checkNow()
+              onApplyRequested: root.updater.apply()
+              onAutoCheckToggled: root.setOption("autoUpdateCheck", !autoCheck)
             }
           }
         }

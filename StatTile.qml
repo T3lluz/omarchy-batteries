@@ -3,8 +3,8 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// A small reading card, as in ROG Deck: icon and caption, a big value, and
-// a note or a level bar underneath.
+// Panel kit: a small reading card. Icon and caption, a big value, and a note
+// or a level bar underneath. Tiles sit three to a row.
 BorderSurface {
   id: tile
 
@@ -17,6 +17,8 @@ BorderSurface {
   property bool showLevel: false
   property color foreground: Commons.Color.foreground
   property color accent: Commons.Color.accent
+  // Dimmed while it is the foreground; a colour of its own (the accent while
+  // charging) is shown as is.
   property color iconColor: foreground
   property color valueColor: foreground
   property color levelColor: foreground
@@ -37,22 +39,26 @@ BorderSurface {
     spacing: Style.space(2)
 
     Row {
+      width: parent.width
       spacing: Style.space(6)
 
-      Icon {
+      Glyph {
         anchors.verticalCenter: parent.verticalCenter
         visible: tile.icon !== ""
-        name: tile.icon || "battery"
+        icon: tile.icon
         size: Style.font.caption
         color: tile.iconColor
-        opacity: tile.iconColor === tile.foreground ? 0.6 : 1
+        opacity: Qt.colorEqual(tile.iconColor, tile.foreground) ? 0.6 : 1
+        fontFamily: tile.fontFamily
       }
 
       Text {
+        anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: tile.caption
         color: tile.foreground
         opacity: 0.6
+        elide: Text.ElideRight
         font.family: tile.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true

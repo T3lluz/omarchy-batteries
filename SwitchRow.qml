@@ -3,8 +3,9 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// One row: an icon, a label (and optional hint), and a switch at the end.
-// Lighter than qs.Ui Toggle, so a section can stack several; ROG Deck's row.
+// Panel kit: one row with an icon, a label (and an optional hint) and a
+// switch at the end. Lighter than qs.Ui Toggle, so a section can stack
+// several.
 Item {
   id: row
 
@@ -12,6 +13,8 @@ Item {
   property string label: ""
   property string hint: ""
   property bool checked: false
+  property bool busy: false
+  property bool interactive: true
   property color foreground: Commons.Color.foreground
   property color accent: Commons.Color.accent
   property string fontFamily: Style.font.family
@@ -20,23 +23,20 @@ Item {
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: Math.max(toggle.implicitHeight, labels.implicitHeight)
+  opacity: interactive ? 1 : 0.45
 
-  Item {
+  Glyph {
     id: iconBox
     anchors.left: parent.left
     anchors.leftMargin: visible ? Style.space(8) : 0
     anchors.verticalCenter: parent.verticalCenter
     visible: row.icon !== ""
     width: visible ? Style.space(22) : 0
-    height: Style.font.title
-
-    Icon {
-      anchors.centerIn: parent
-      name: row.icon || "battery"
-      size: Style.font.title
-      color: row.foreground
-      opacity: row.checked ? 1 : 0.6
-    }
+    icon: row.icon
+    size: Style.font.title
+    color: row.foreground
+    opacity: row.checked ? 1 : 0.6
+    fontFamily: row.fontFamily
   }
 
   Column {
@@ -76,6 +76,7 @@ Item {
     anchors.right: toggle.left
     anchors.top: parent.top
     anchors.bottom: parent.bottom
+    enabled: row.interactive && !row.busy
     cursorShape: Qt.PointingHandCursor
     onClicked: row.toggled()
   }
@@ -85,6 +86,8 @@ Item {
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
     checked: row.checked
+    busy: row.busy
+    interactive: row.interactive
     foreground: row.foreground
     accent: row.accent
     onToggled: row.toggled()

@@ -138,6 +138,7 @@ BarWidget {
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "intervalSec"; value: root.intervalSec }
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "lowThreshold"; value: root.lowThreshold }
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "notifyLow"; value: root.notifyLow }
+  Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "autoUpdateCheck"; value: setting("autoUpdateCheck", true) === true }
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "liveBar"; value: root.barOptions.laptopRate || root.barOptions.laptopTime }
 
   Loader {
