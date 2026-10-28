@@ -179,20 +179,30 @@ function laptopStatus(lap) {
   return "Unknown"
 }
 
-// Label/value rows for the laptop card.
-function laptopFacts(lap) {
+// The laptop's three stat tiles: power in or out, health, then the charge
+// limit (or the cycle count, or the stored energy, whichever the pack has).
+function laptopTiles(lap) {
   if (!lap) return []
-  var rows = []
-  if (lap.status === "charging" || lap.status === "discharging")
-    rows.push({ icon: "bolt", label: lap.status === "charging" ? "Charging at" : "Drawing", value: watts(lap.rateW) })
-  if (lap.timeToEmpty) rows.push({ icon: "clock-hour-4", label: "Time left", value: duration(lap.timeToEmpty) })
-  if (lap.timeToFull) rows.push({ icon: "clock-hour-4", label: "Until " + (lap.chargeLimit ? lap.chargeLimit + "%" : "full"), value: duration(lap.timeToFull) })
-  if (lap.energyFullWh) rows.push({ icon: "battery-2", label: "Energy", value: lap.energyWh + " / " + lap.energyFullWh + " Wh" })
-  if (hasLevel(lap.health)) rows.push({ icon: "heartbeat", label: "Health", value: lap.health + "% of " + lap.energyDesignWh + " Wh" })
-  if (lap.cycles) rows.push({ icon: "repeat", label: "Cycles", value: String(lap.cycles) })
-  if (lap.chargeLimit) rows.push({ icon: "battery-eco", label: "Charge limit", value: (lap.chargeStart ? lap.chargeStart + "–" : "") + lap.chargeLimit + "%" })
-  rows.push({ icon: lap.acOnline ? "plug-connected" : "plug", label: "Power", value: lap.acOnline ? "AC adapter" : "Battery" })
-  return rows
+  var power = { icon: "bolt", caption: "POWER", value: watts(lap.rateW), note: "Idle" }
+  if (lap.status === "charging") power.note = "Charging"
+  else if (lap.status === "discharging") power.note = "On battery"
+  else if (lap.acOnline) power.note = "Plugged in"
+  var tiles = [power]
+  if (hasLevel(lap.health))
+    tiles.push({ icon: "heartbeat", caption: "HEALTH", value: lap.health + "%", note: lap.energyDesignWh ? "of " + lap.energyDesignWh + " Wh new" : "" })
+  if (lap.chargeLimit)
+    tiles.push({ icon: "battery-eco", caption: "LIMIT", value: (lap.chargeStart ? lap.chargeStart + "–" : "") + lap.chargeLimit + "%", note: lap.cycles ? lap.cycles + " cycles" : "Stops charging" })
+  else if (lap.cycles)
+    tiles.push({ icon: "repeat", caption: "CYCLES", value: String(lap.cycles), note: "" })
+  if (tiles.length < 3 && lap.energyFullWh)
+    tiles.push({ icon: "battery-2", caption: "STORED", value: lap.energyWh + " Wh", note: "of " + lap.energyFullWh + " Wh" })
+  return tiles.slice(0, 3)
+}
+
+// What the pack holds now against what it holds full.
+function laptopEnergy(lap) {
+  if (!lap || !lap.energyFullWh) return ""
+  return lap.energyWh + " of " + lap.energyFullWh + " Wh"
 }
 
 // ----------------------------------------------------------------- AirPods
@@ -215,6 +225,23 @@ function airpodsParts(pods) {
   ]
 }
 
+// AirPods as stat tiles: each bud and the case, a bolt for the icon while
+// that part charges.
+function airpodsTiles(pods) {
+  return airpodsParts(pods).map(function(part) {
+    var pod = part.pod
+    return {
+      key: part.key,
+      icon: pod && pod.charging ? "bolt" : (part.key === "case" ? "device-airpods-case" : "device-airpods"),
+      caption: part.label.toUpperCase(),
+      value: pod ? percent(pod.level) : "--",
+      level: pod && hasLevel(pod.level) ? pod.level : null,
+      charging: !!pod && !!pod.charging,
+      pod: pod
+    }
+  })
+}
+
 function airpodsStatus(pods) {
   if (!pods) return ""
   if (pods.stale) return "Not connected · last levels"
@@ -223,6 +250,25 @@ function airpodsStatus(pods) {
     return "Connected" + (inEar === 2 ? " · in both ears" : inEar === 1 ? " · in one ear" : "")
   }
   return pods.known ? "In range, not connected" : "Not connected"
+}
+
+// ------------------------------------------------------------- summary
+
+// The panel header's one line: what needs attention, or that nothing does.
+function summary(state, threshold) {
+  if (!state) return ""
+  var all = []
+  if (state.laptop && hasLevel(state.laptop.level)) all.push({ name: "Laptop", item: state.laptop })
+  var pods = state.airpods
+  if (pods && pods.known && !pods.stale && hasLevel(pods.level)) all.push({ name: pods.name || "AirPods", item: pods })
+  ;(state.devices || []).forEach(function(d) {
+    if (hasLevel(d.level) && !d.stale) all.push({ name: kindLabel(d.kind), item: d })
+  })
+  if (!all.length) return "No batteries found"
+  var low = all.filter(function(b) { return isLow(b.item, threshold) })
+  if (low.length === 1) return low[0].name + " is low · " + percent(low[0].item.level)
+  if (low.length > 1) return low.length + " batteries are low"
+  return (all.length === 1 ? "1 battery · above " : all.length + " batteries · all above ") + threshold + "%"
 }
 
 // ---------------------------------------------------------------- the bar
@@ -261,6 +307,34 @@ function toggleBarDevice(ids, id, devices) {
 
 // One entry per thing shown in the bar, in order: peripherals, AirPods,
 // then the laptop. `opts` mirrors the widget's settings.
+// The bar picker's tiles, like ROG Deck's: { key, icon, label, hint,
+// fallback } for the laptop and AirPods settings, and { device, icon, label,
+// hint } for each peripheral, which is saved in barDevices instead.
+function barPicks(state) {
+  var picks = []
+  var lap = state ? state.laptop : null
+  if (lap) {
+    picks.push({ key: "barLaptop", icon: "device-laptop", label: "Laptop", hint: "Its level, with a bolt while it charges", fallback: true })
+    picks.push({ key: "barLaptopRate", icon: "bolt", label: "Laptop power", hint: "Watts going in or out", fallback: false })
+    picks.push({ key: "barLaptopTime", icon: "clock-hour-4", label: "Laptop time", hint: "Time left, or time to full while charging", fallback: false })
+  }
+  var pods = state ? state.airpods : null
+  if (pods) {
+    picks.push({ key: "barAirpods", icon: "device-airpods", label: pods.name || "AirPods", hint: "The emptier bud, while they are connected", fallback: true })
+    if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", icon: "device-airpods-case", label: "AirPods case", hint: "While the case is open and in range", fallback: false })
+  }
+  ;((state && state.devices) || []).forEach(function(d) {
+    picks.push({ device: d, icon: kindIcon(d.kind), label: d.name, hint: kindLabel(d.kind) + " · " + subtitle(d) })
+  })
+  return picks
+}
+
+// The picker header's reading: how many are on, or that the bar shows only
+// the icon.
+function barPickedText(count) {
+  return count > 0 ? count + " SHOWN" : "ICON ONLY"
+}
+
 function barItems(state, opts) {
   var items = []
   var t = opts.lowThreshold || 20
@@ -373,24 +447,41 @@ function tooltip(state) {
 // ---------------------------------------------------------------- history
 
 // The laptop's level over time, for the panel's graph: [[unixSeconds, level,
-// charging 0/1], ...], oldest first. A sample is kept every `gap` seconds,
-// or sooner when the level or charging changes, for `keep` seconds.
+// plugged in 0/1], ...], oldest first. A sample is kept every `gap` seconds,
+// or sooner when the level or the power changes, for `keep` seconds.
+//
+// Plugged in rather than charging: held at a charge limit, the pack flips
+// between charging and resting every minute or so and loses a percent each
+// time, which read as hard drain on battery.
 var HISTORY_GAP = 120
 var HISTORY_KEEP = 24 * 3600
+var HISTORY_VERSION = 2
 
 function parseHistory(text) {
   var data
   try { data = JSON.parse(String(text || "")) } catch (e) { return [] }
   var list = data && Array.isArray(data.samples) ? data.samples : []
-  return list.filter(function(s) {
+  list = list.filter(function(s) {
     return Array.isArray(s) && s.length >= 3 && isFinite(s[0]) && isFinite(s[1]) && s[1] >= 0 && s[1] <= 100
   }).map(function(s) { return [Math.round(s[0]), Math.round(s[1]), s[2] ? 1 : 0] })
+  if ((data.version || 1) >= HISTORY_VERSION) return list
+  // Version 1 kept charging. A resting sample within ten minutes of a
+  // charging one was the pack held at its limit, so plugged in.
+  return list.map(function(s) {
+    if (s[2]) return s
+    var near = list.some(function(o) { return o[2] && Math.abs(o[0] - s[0]) <= 600 })
+    return near ? [s[0], s[1], 1] : s
+  })
 }
 
-function pushLevelSample(history, nowSec, level, charging) {
+function serializeHistory(history) {
+  return JSON.stringify({ version: HISTORY_VERSION, samples: history || [] }) + "\n"
+}
+
+function pushLevelSample(history, nowSec, level, plugged) {
   var list = (history || []).filter(function(s) { return nowSec - s[0] <= HISTORY_KEEP && s[0] <= nowSec })
   if (!hasLevel(level)) return list
-  var sample = [Math.round(nowSec), Math.round(level), charging ? 1 : 0]
+  var sample = [Math.round(nowSec), Math.round(level), plugged ? 1 : 0]
   var last = list.length ? list[list.length - 1] : null
   if (last && sample[0] - last[0] < HISTORY_GAP && last[1] === sample[1] && last[2] === sample[2]) return list
   list.push(sample)
@@ -403,7 +494,7 @@ function historySince(history, nowSec, hours) {
 }
 
 // Average drain on battery over the window, in % per hour, from the runs of
-// discharging samples (a gap over 15 minutes, a suspend, ends a run). Null
+// unplugged samples (a gap over 15 minutes, a suspend, ends a run). Null
 // until half an hour on battery has been seen.
 function drainPerHour(history, nowSec, hours) {
   var list = historySince(history, nowSec, hours)
@@ -420,6 +511,6 @@ function drainPerHour(history, nowSec, hours) {
 
 function drainText(perHour) {
   if (perHour === null || perHour === undefined) return ""
-  return (perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10) + "% an hour on battery"
+  return (perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10) + "%/h on battery"
 }
 

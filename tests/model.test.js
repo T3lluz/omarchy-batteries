@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, airpodsParts, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, pushLevelSample, historySince, drainPerHour, drainText, lowBatteryAlerts, alertables, tooltip }")()
+const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopTiles, laptopEnergy, summary, airpodsParts, airpodsTiles, barPicks, barPickedText, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainText, lowBatteryAlerts, alertables, tooltip }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -76,7 +76,7 @@ assert.strictEqual(Model.batteryIcon(null, false), "battery-off")
 const iconSource = fs.readFileSync(path.join(__dirname, "..", "Icons.js"), "utf8").replace(/^\.pragma library\s*/, "")
 const Icons = new Function(iconSource + "\nreturn paths")()
 const modelSource = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
-const qml = ["BarWidget.qml", "Panel.qml"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n")
+const qml = ["BarWidget.qml", "Panel.qml", "SectionHeader.qml", "StatTile.qml", "ToggleTile.qml", "SwitchRow.qml", "Notice.qml"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n")
 for (const m of (modelSource + qml).matchAll(/(?:icon|name): "([a-z0-9-]+)"/g)) assert.ok(Icons[m[1]] || m[1] === "airpods", "missing icon " + m[1])
 for (const m of modelSource.matchAll(/return "((?:battery|device)[a-z0-9-]*)"/g)) assert.ok(Icons[m[1]], "missing icon " + m[1])
 for (const k of ["mouse", "keyboard", "headset", "laptop", "phone", "gaming-input", "ups"]) assert.ok(Icons[Model.kindIcon(k)], k)
@@ -91,9 +91,23 @@ assert.strictEqual(Model.laptopStatus(held), "Plugged in · held at 90% limit")
 assert.strictEqual(Model.duration(59 * 60 + 50), "1h 00m")
 assert.strictEqual(Model.watts(12.34), "12 W")
 assert.strictEqual(Model.watts(4.56), "4.6 W")
-const facts = Model.laptopFacts(onBattery).map(f => f.label)
-assert.deepStrictEqual(facts, ["Drawing", "Time left", "Energy", "Health", "Cycles", "Charge limit", "Power"])
-assert.ok(!Model.laptopFacts(held).some(f => f.label === "Drawing"))
+assert.deepStrictEqual(Model.laptopTiles(onBattery).map(t => t.caption), ["POWER", "HEALTH", "LIMIT"])
+assert.deepStrictEqual(Model.laptopTiles(onBattery)[0], { icon: "bolt", caption: "POWER", value: "12 W", note: "On battery" })
+assert.strictEqual(Model.laptopTiles(onBattery)[2].note, "120 cycles")
+assert.strictEqual(Model.laptopTiles(held)[0].note, "Plugged in")
+// Without a limit or cycles, the stored energy fills the third tile.
+assert.deepStrictEqual(Model.laptopTiles(Object.assign({}, onBattery, { chargeLimit: null, cycles: null })).map(t => t.caption), ["POWER", "HEALTH", "STORED"])
+assert.strictEqual(Model.laptopEnergy(onBattery), "36.6 of 57.2 Wh")
+assert.strictEqual(Model.laptopEnergy({ energyWh: 10 }), "")
+
+// The panel header's line.
+assert.strictEqual(Model.summary({ laptop: onBattery, devices: [] }, 20), "1 battery · above 20%")
+assert.strictEqual(Model.summary({ laptop: onBattery, devices: [wireless] }, 20), "2 batteries · all above 20%")
+assert.strictEqual(Model.summary({ laptop: onBattery, devices: [Object.assign({}, wireless, { level: 12 })] }, 20), "Mouse is low · 12%")
+assert.strictEqual(Model.summary({ laptop: Object.assign({}, onBattery, { level: 9 }), devices: [Object.assign({}, wireless, { level: 12 })] }, 20), "2 batteries are low")
+// Charging is never low, and a device last seen a while ago does not count.
+assert.strictEqual(Model.summary({ laptop: Object.assign({}, charging, { level: 9 }), devices: [Object.assign({}, wireless, { stale: true })] }, 20), "1 battery · above 20%")
+assert.strictEqual(Model.summary({ devices: [] }, 20), "No batteries found")
 
 // AirPods
 const podsFresh = { name: "AirPods Pro", model: "AirPods Pro 2 (USB-C)", connected: true, isHeadset: false, left: { level: 80, charging: false, inEar: true }, right: { level: 70, charging: false, inEar: true }, case: { level: 50, charging: true }, headset: null, level: 70, charging: false, known: true }
@@ -106,6 +120,18 @@ assert.strictEqual(Model.airpodsStatus(podsKept), "Not connected · last levels"
 assert.strictEqual(Model.airpodsWithLastKnown(podsGone, null).known, false)
 assert.deepStrictEqual(Model.airpodsParts(podsFresh).map(p => p.key), ["left", "right", "case"])
 assert.deepStrictEqual(Model.airpodsParts({ isHeadset: true, headset: { level: 50 } }).map(p => p.key), ["headset"])
+assert.deepStrictEqual(Model.airpodsTiles(podsFresh).map(t => [t.caption, t.icon, t.value]), [["LEFT", "device-airpods", "80%"], ["RIGHT", "device-airpods", "70%"], ["CASE", "bolt", "50%"]])
+assert.strictEqual(Model.airpodsTiles(podsGone).length, 3)
+
+// The bar picker: laptop, AirPods, then each peripheral.
+{
+  const picks = Model.barPicks({ laptop: onBattery, airpods: podsFresh, devices: [wireless] })
+  assert.deepStrictEqual(picks.map(p => p.key || p.device.id), ["barLaptop", "barLaptopRate", "barLaptopTime", "barAirpods", "barAirpodsCase", "glorious:2022"])
+  assert.strictEqual(picks[5].icon, "mouse")
+  assert.ok(!Model.barPicks({ airpods: { isHeadset: true, name: "AirPods Max" }, devices: [] }).some(p => p.key === "barAirpodsCase"))
+  assert.strictEqual(Model.barPickedText(0), "ICON ONLY")
+  assert.strictEqual(Model.barPickedText(2), "2 SHOWN")
+}
 
 assert.strictEqual(Model.airpodsVariant(podsFresh), "buds")
 assert.strictEqual(Model.airpodsVariant(Object.assign({}, podsFresh, { isPro: true })), "pro")
@@ -169,16 +195,19 @@ assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
   h = Model.pushLevelSample(h, 1080 + 25 * 3600, 60, false)
   assert.deepStrictEqual(h, [[1080 + 25 * 3600, 60, 0]])
   assert.deepStrictEqual(Model.pushLevelSample([], 5, null, false), [])
-  assert.deepStrictEqual(Model.parseHistory('{"samples":[[1,50,0],[2,"x",1],[3,120,0],[4,40,1]]}'), [[1, 50, 0], [4, 40, 1]])
+  assert.deepStrictEqual(Model.parseHistory('{"version":2,"samples":[[1,50,0],[2,"x",1],[3,120,0],[4,40,1]]}'), [[1, 50, 0], [4, 40, 1]])
+  assert.deepStrictEqual(Model.parseHistory(Model.serializeHistory([[1, 50, 0], [700, 40, 1]])), [[1, 50, 0], [700, 40, 1]])
+  // Version 1 kept charging: resting next to charging was the pack held at its limit.
+  assert.deepStrictEqual(Model.parseHistory('{"version":1,"samples":[[0,80,0],[1000,90,1],[1060,89,0],[3000,88,0]]}'), [[0, 80, 0], [1000, 90, 1], [1060, 89, 1], [3000, 88, 0]])
   assert.deepStrictEqual(Model.parseHistory("nope"), [])
-  // 10 points an hour over an hour on battery; the charging stretch is left out.
+  // 10 points an hour over an hour on battery; the plugged-in stretch is left out.
   const run = []
   for (let i = 0; i <= 6; i++) run.push([i * 600, 90 - i * (10 / 6), 0])
   run.push([4200, 80, 1], [4800, 85, 1])
   assert.strictEqual(Math.round(Model.drainPerHour(run, 4800, 12)), 10)
   assert.strictEqual(Model.drainPerHour(run.slice(0, 2), 600, 12), null)
-  assert.strictEqual(Model.drainText(10.4), "10% an hour on battery")
-  assert.strictEqual(Model.drainText(4.26), "4.3% an hour on battery")
+  assert.strictEqual(Model.drainText(10.4), "10%/h on battery")
+  assert.strictEqual(Model.drainText(4.26), "4.3%/h on battery")
   assert.strictEqual(Model.historySince(run, 4800, 0.5).length, 4)
 }
 

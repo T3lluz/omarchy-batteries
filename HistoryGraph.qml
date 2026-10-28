@@ -3,19 +3,19 @@ import qs.Commons
 import qs.Commons as Commons
 
 // The laptop's charge over the last hours: a filled line on a 0 to 100%
-// scale, in the accent colour where it was charging. Gaps (the laptop asleep
+// scale, in the accent colour where it was plugged in. Gaps (the laptop asleep
 // or off) break the line instead of drawing a ramp across them.
 Item {
   id: root
 
-  // [[unixSeconds, level, charging], ...] oldest first (Model.parseHistory).
+  // [[unixSeconds, level, plugged in], ...] oldest first (Model.parseHistory).
   property var samples: []
   property real hours: 12
   property real nowSec: Date.now() / 1000
   property color foreground: Commons.Color.foreground
   property color accent: Commons.Color.accent
 
-  implicitHeight: Style.space(44)
+  implicitHeight: Style.space(56)
 
   onSamplesChanged: { nowSec = Date.now() / 1000; chart.requestPaint() }
   onWidthChanged: chart.requestPaint()
@@ -31,24 +31,24 @@ Item {
       var ctx = getContext("2d")
       ctx.reset()
       var w = width, h = height
-      ctx.fillStyle = Util.alpha(root.foreground, 0.035)
-      ctx.fillRect(0, 0, w, h)
 
-      // Guides at 20%, 50% and 80%.
-      ctx.strokeStyle = Util.alpha(root.foreground, 0.08)
+      // Dotted guides at 50% and 100%, and a solid floor at 0%.
+      ctx.strokeStyle = Util.alpha(root.foreground, 0.1)
       ctx.lineWidth = 1
-      var guides = [20, 50, 80]
+      var guides = [50, 100]
       for (var g = 0; g < guides.length; g++) {
         var gy = Math.round(yFor(guides[g])) + 0.5
-        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke()
+        for (var gx = 0; gx < w; gx += 4) { ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + 1.5, gy); ctx.stroke() }
       }
+      ctx.strokeStyle = Util.alpha(root.foreground, 0.16)
+      ctx.beginPath(); ctx.moveTo(0, h - 0.5); ctx.lineTo(w, h - 0.5); ctx.stroke()
 
       var from = root.nowSec - root.hours * 3600
       var list = (root.samples || []).filter(function(s) { return s[0] >= from })
       if (list.length < 2) return
 
       function xFor(t) { return Math.max(0, Math.min(w, (t - from) / (root.hours * 3600) * w)) }
-      function yFor(level) { return h - 1 - Math.max(0, Math.min(100, level)) / 100 * (h - 3) }
+      function yFor(level) { return h - 1 - Math.max(0, Math.min(100, level)) / 100 * (h - 4) }
 
       // Runs of samples no more than 15 minutes apart.
       var runs = [], run = [list[0]]
@@ -62,7 +62,7 @@ Item {
         var pts = runs[r]
         if (pts.length < 2) continue
         // Area under the line, then the line, one segment at a time so a
-        // charging stretch takes the accent colour.
+        // plugged-in stretch takes the accent colour.
         ctx.beginPath()
         ctx.moveTo(xFor(pts[0][0]), h)
         for (var p = 0; p < pts.length; p++) ctx.lineTo(xFor(pts[p][0]), yFor(pts[p][1]))

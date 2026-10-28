@@ -72,7 +72,7 @@ Item {
     airpods = pods
     laptop = parsed.laptop
     if (laptop && historyLoaded) {
-      var grown = Model.pushLevelSample(history, Date.now() / 1000, laptop.level, laptop.charging)
+      var grown = Model.pushLevelSample(history, Date.now() / 1000, laptop.level, laptop.charging || laptop.acOnline)
       if (grown.length !== history.length || grown[grown.length - 1] !== history[history.length - 1]) {
         history = grown
         historySave.restart()
@@ -169,10 +169,10 @@ Item {
   Timer {
     id: historySave
     interval: 60000
-    onTriggered: historyFile.setText(JSON.stringify({ version: 1, samples: root.history }) + "\n")
+    onTriggered: historyFile.setText(Model.serializeHistory(root.history))
   }
 
-  Component.onDestruction: if (historySave.running) historyFile.setText(JSON.stringify({ version: 1, samples: root.history }) + "\n")
+  Component.onDestruction: if (historySave.running) historyFile.setText(Model.serializeHistory(root.history))
 
   Process {
     id: probeProc

@@ -7,6 +7,7 @@ How Batteries is put together, for anyone (or any agent) changing it. The user-f
 - `BarWidget.qml`: the bar entry, once per monitor. The first instance (the leader) loads `BatteryClient.qml`; the others read the leader's. Hosts `Panel.qml` and the IPC target.
 - `BatteryClient.qml`: polls `bin/batteries probe`, listens to udev and librepods, keeps last-seen levels, the laptop's charge history and low-battery notifications.
 - `Panel.qml`, `HistoryGraph.qml`: the panel and its charge graph.
+- `SectionHeader.qml`, `StatTile.qml`, `ToggleTile.qml`, `SwitchRow.qml`, `Seg.qml`, `Notice.qml`, `LevelBar.qml`: the panel's parts, the same as ROG Deck's (and Sonus's section headers) so the plugins look alike, with drawn Tabler icons in place of Nerd Font glyphs.
 - `WidgetSettings.qml`: this widget's `shell.json` entry, read from the file (see below).
 - `Model.js`: parsing, the bar items, the history and alert rules. Tested by `tests/model.test.js`.
 - `bin/batteries`: the reader (Python, stdlib only): sysfs, UPower, librepods, HID for Glorious and HyperX, openrazer, HeadsetControl, libimobiledevice, KDE Connect. Tested by `tests/test_batteries.py`.
