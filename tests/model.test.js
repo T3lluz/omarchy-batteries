@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopTiles, laptopEnergy, summary, airpodsParts, airpodsTiles, barPicks, barPickedText, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainText, lowBatteryAlerts, alertables, tooltip }")()
+const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, deviceTitle, jblTitle, jblSpeakers, otherDevices, jblStatus, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopTiles, laptopEnergy, summary, airpodsParts, airpodsTiles, barPicks, barPickedText, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainText, lowBatteryAlerts, alertables, tooltip }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -66,6 +66,22 @@ assert.strictEqual(Model.kindIcon("mouse"), "mouse")
 assert.strictEqual(Model.kindIcon("toaster"), "battery")
 assert.strictEqual(Model.kindLabel("gaming-input"), "Controller")
 assert.strictEqual(Model.kindLabel("mouse"), "Mouse")
+assert.strictEqual(Model.kindLabel("speakers"), "Speaker")
+
+// JBL speakers: titled by model, the app's name underneath, out of Devices.
+const charge = { id: "jbl:F8", name: "Sound object", model: "JBL Charge 5", kind: "speakers", source: "jbl", level: 60, status: "discharging", connection: "bluetooth" }
+const boombox = { id: "jbl:AA", name: "JBL Boombox 3", model: "JBL Boombox 3", kind: "speakers", source: "jbl", level: 90, status: "discharging", connection: "bluetooth" }
+assert.strictEqual(Model.deviceTitle(charge), "JBL Charge 5")
+assert.strictEqual(Model.jblTitle(charge), "Charge 5")
+assert.strictEqual(Model.jblTitle({ name: "Sound object", source: "jbl" }), "Sound object")
+assert.strictEqual(Model.deviceTitle({ name: "G502" }), "G502")
+assert.strictEqual(Model.subtitle(charge), "Sound object · On battery · Bluetooth")
+assert.strictEqual(Model.subtitle(boombox), "On battery · Bluetooth")
+assert.strictEqual(Model.kindIcon(charge.kind), "device-speaker")
+const glorious = { id: "m", name: "Mouse", kind: "mouse", source: "glorious" }
+assert.deepStrictEqual(Model.jblSpeakers([glorious, charge]), [charge])
+assert.deepStrictEqual(Model.otherDevices([glorious, charge]), [glorious])
+assert.strictEqual(Model.jblStatus([charge, boombox]), "2 connected")
 assert.strictEqual(Model.batteryIcon(95, false), "battery-4")
 assert.strictEqual(Model.batteryIcon(40, false), "battery-2")
 assert.strictEqual(Model.batteryIcon(5, false), "battery")
@@ -75,11 +91,16 @@ assert.strictEqual(Model.batteryIcon(null, false), "battery-off")
 // Every icon the model names exists in Icons.js.
 const iconSource = fs.readFileSync(path.join(__dirname, "..", "Icons.js"), "utf8").replace(/^\.pragma library\s*/, "")
 const Icons = new Function(iconSource + "\nreturn paths")()
+const markSource = fs.readFileSync(path.join(__dirname, "..", "Marks.js"), "utf8").replace(/^\.pragma library\s*/, "")
+const Marks = new Function(markSource + "\nreturn { fills }")()
 const modelSource = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const qml = ["BarWidget.qml", "Panel.qml", "SectionHeader.qml", "StatTile.qml", "ToggleTile.qml", "SwitchRow.qml", "Notice.qml"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n")
-for (const m of (modelSource + qml).matchAll(/(?:icon|name): "([a-z0-9-]+)"/g)) assert.ok(Icons[m[1]] || m[1] === "airpods", "missing icon " + m[1])
+for (const m of (modelSource + qml).matchAll(/(?:icon|name): "([a-z0-9-]+)"/g)) assert.ok(Icons[m[1]] || Marks.fills[m[1]] || m[1] === "airpods", "missing icon " + m[1])
 for (const m of modelSource.matchAll(/return "((?:battery|device)[a-z0-9-]*)"/g)) assert.ok(Icons[m[1]], "missing icon " + m[1])
 for (const k of ["mouse", "keyboard", "headset", "laptop", "phone", "gaming-input", "ups"]) assert.ok(Icons[Model.kindIcon(k)], k)
+
+// The JBL mark lives in Marks.js.
+assert.ok(Marks.fills.jbl)
 
 // Laptop
 const onBattery = { level: 64, status: "discharging", charging: false, acOnline: false, rateW: 12.34, timeToEmpty: 3 * 3600 + 5 * 60, timeToFull: null, energyWh: 36.6, energyFullWh: 57.2, energyDesignWh: 76, health: 75, cycles: 120, chargeLimit: 90, chargeStart: null, batteries: ["BAT0"] }

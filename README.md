@@ -4,7 +4,7 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.3.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.4.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
@@ -20,6 +20,7 @@
 - **Laptop:** level with the charge limit marked, the rate, energy in Wh, health against the design capacity, cycles, charge limit and power source.
 - **Charge history:** the last 12 hours as a graph, plugged-in stretches in the accent colour, and your average drain on battery (time spent plugged in, even held at a charge limit, never counts as drain). It is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
 - **AirPods:** each bud and the case with level, charging and in-ear state, or an AirPods Max's single battery. Last seen levels stay, dimmed, once they are back in the case.
+- **JBL speakers:** their own section under the JBL mark, each titled with the mark and its model (Charge 5, Boombox 3, ...), the name you gave it in the JBL app underneath, with level and charging, read the way the JBL Portable app reads them.
 - **Devices:** every peripheral with a level bar, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
 - **Live:** plugging a cable or the charger in or out refreshes within a second or two (it listens to udev), as does any change librepods reports for your AirPods.
 - **Low battery:** one notification when a peripheral or your AirPods drop below the threshold. The laptop keeps Omarchy's own warning.
@@ -51,13 +52,14 @@ That installs `udev/70-omarchy-batteries.rules`, which gives the logged-in user 
 | Built in, HID | HyperX Cloud Alpha Wireless |
 | UPower | Bluetooth mice, keyboards and headsets, Logitech Lightspeed/Unifying (HID++), PlayStation and Switch controllers, Apple Magic devices, Wacom tablets, UPSes |
 | openrazer | Razer wireless mice and keyboards, when the openrazer driver is installed |
+| Built in, Bluetooth | JBL speakers the JBL Portable app reads, such as Charge 5 and Boombox 3 |
 | HeadsetControl | SteelSeries, Logitech, Corsair, HyperX and other headsets, when `headsetcontrol` is installed |
 | libimobiledevice | An iPhone or iPad on USB |
 | KDE Connect | Phones paired with KDE Connect |
 
 If one device is reported by two sources, the first in this table wins. The librepods reading of your AirPods beats BlueZ's single headset level.
 
-The Glorious reader speaks the protocol from [korkje/mow](https://github.com/korkje/mow) and [gloriousctl](https://github.com/ibericode/gloriousctl), and the HyperX one the protocol from [streamdeck-hyperx-caw-battery](https://github.com/T3lluz/streamdeck-hyperx-caw-battery-Linux). It talks to `/dev/hidraw` through the kernel's ioctls directly, so it needs only Python's standard library.
+The Glorious reader speaks the protocol from [korkje/mow](https://github.com/korkje/mow) and [gloriousctl](https://github.com/ibericode/gloriousctl), and the HyperX one the protocol from [streamdeck-hyperx-caw-battery](https://github.com/T3lluz/streamdeck-hyperx-caw-battery-Linux). It talks to `/dev/hidraw` through the kernel's ioctls directly, so it needs only Python's standard library. The JBL reader speaks the protocol mapped by [JBLControl](https://github.com/ffrafat/JBLControl), over the speaker's GATT service on the same Bluetooth link as the audio, so music keeps playing and nothing has to be paired twice.
 
 ## Use
 
@@ -120,6 +122,6 @@ omarchy restart shell             # pick up QML changes
 
 ## License
 
-MIT. `AirPodsIcon.qml` is from omapods (MIT, © 2026 GM). Tabler Icons are MIT. Not affiliated with Apple, Glorious, HyperX or Razer.
+MIT. `AirPodsIcon.qml` is from omapods (MIT, © 2026 GM). Tabler Icons are MIT. Not affiliated with Apple, Glorious, HyperX, JBL or Razer.
 
 One of a set of Omarchy plugins: **Batteries** · [ROG Deck](https://github.com/T3lluz/omarchy-rog-deck) · [Sonus](https://github.com/T3lluz/omarchy-sonus) · [Server Dashboard](https://github.com/T3lluz/omarchy-server-dashboard)

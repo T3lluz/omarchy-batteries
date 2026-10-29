@@ -16,6 +16,8 @@ Peripherals, in order (the first source wins when two report one device):
   glorious-wired  Sinowealth Glorious mice (gloriousctl protocol)
   hyperx          HyperX Cloud Alpha Wireless dongle over /dev/hidraw
   razer           openrazer kernel driver (charge_level in sysfs)
+  jbl             JBL speakers the JBL Portable app reads (Charge 5, Boombox 3,
+                  ...), over their GATT service on the Bluetooth Classic link
   upower          everything UPower knows: Bluetooth (BlueZ), Logitech HID++,
                   Sony and Nintendo controllers, Apple and Wacom devices, ...
   headsetcontrol  any headset HeadsetControl supports, when it is installed
@@ -40,9 +42,12 @@ import os
 import re
 import select
 import shutil
+import socket
+import struct
 import subprocess
 import sys
 import time
+import uuid
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 UDEV_RULES = os.path.join(HERE, "..", "udev", "70-omarchy-batteries.rules")
@@ -329,6 +334,155 @@ def razer() -> list[dict]:
             "charging": charging,
             "status": "charging" if charging else ("full" if level >= 100 else "discharging"),
             "connection": "wireless",
+        })
+    return out
+
+
+# ------------------------------------------------------------ JBL speakers
+
+# The JBL Portable app reads Charge 5, Boombox 3 and their siblings through a
+# GATT service ExcelPoint built for Harman (protocol from ffrafat/JBLControl).
+# Over Bluetooth Classic the speaker serves it on the ATT channel, L2CAP PSM 31,
+# beside the audio, so reading it needs no LE link and leaves playback alone.
+JBL_UUID_PREFIX = "65786365-6c70-6f69-6e74-"
+JBL_RX = uuid.UUID("65786365-6c70-6f69-6e74-2e636f6d0001").bytes[::-1]
+JBL_TX = uuid.UUID("65786365-6c70-6f69-6e74-2e636f6d0002").bytes[::-1]
+JBL_INFO_REQUEST = b"\xaa\x11\x00"
+JBL_MODEL = 0x42
+JBL_BATTERY = 0x44
+ATT_PSM = 31
+# Token 42's product IDs, from JBLControl's catalogue of the JBL Portable app.
+JBL_MODELS = {
+    0x0023: "JBL Flip 3", 0x0024: "JBL Xtreme", 0x1EBC: "JBL Charge 3", 0x1ED1: "JBL Flip 4",
+    0x1ED2: "JBL Pulse 3", 0x1EE7: "JBL Boombox", 0x1EFC: "JBL Xtreme 2", 0x1F17: "JBL Charge 4",
+    0x1F26: "JBL Xtreme 2", 0x1F27: "JBL Boombox", 0x1F29: "JBL Charge 4", 0x1F31: "JBL Flip 5",
+    0x1F53: "JBL Boombox 2", 0x1F56: "JBL Pulse 4", 0x202F: "JBL Xtreme 3", 0x2038: "JBL Xtreme 2",
+    0x2040: "JBL Charge 5", 0x204F: "JBL Flip 6", 0x2050: "JBL Pulse 5", 0x206D: "JBL Boombox 3",
+    0x2075: "JBL Boombox 3 Wi-Fi", 0x208C: "JBL Charge 5 Wi-Fi", 0x20DC: "JBL Xtreme 4",
+    0x20E3: "JBL Charge 6", 0x20E4: "JBL Go 4", 0x20F5: "JBL Clip 5", 0x2107: "JBL Flip 7",
+    0x210A: "JBL Go 4", 0x214C: "JBL Tuner 3", 0x215C: "JBL Go 4 Duo", 0x2181: "JBL Go 4 Duo",
+}
+
+
+def parse_jbl_info(data: bytes) -> dict | None:
+    """The AA 12 info frames that answer AA 11 00: AA 12 <len> 00 <token> <value...>.
+    Battery is token 44: the low seven bits are the level, the top bit is charging.
+    Token 42, sent before it, is the product ID that names the model."""
+    model = None
+    i = 0
+    while i + 3 <= len(data):
+        if data[i] != 0xAA:
+            i += 1
+            continue
+        cmd, length = data[i + 1], data[i + 2]
+        payload = data[i + 3:i + 3 + length]
+        if cmd == 0x12 and len(payload) >= 4 and payload[1] == JBL_MODEL:
+            model = JBL_MODELS.get(payload[2] << 8 | payload[3])
+        elif cmd == 0x12 and len(payload) >= 3 and payload[1] == JBL_BATTERY:
+            level = payload[2] & 0x7F
+            if level <= 100:
+                return {"level": level, "charging": bool(payload[2] & 0x80), "model": model}
+        i += 3 + length
+    return None
+
+
+def _att(sock: socket.socket, pdu: bytes, want: int) -> bytes | None:
+    sock.send(pdu)
+    while True:
+        r = sock.recv(1024)
+        if r and r[0] == want:
+            return r
+        if r and r[0] == 0x01:  # error response
+            return None
+
+
+def jbl_read(address: str) -> dict | None:
+    sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
+    sock.settimeout(1.5)
+    try:
+        sock.connect((address, ATT_PSM))
+        # Read By Type on characteristic declarations: handle, properties, value handle, UUID.
+        rx = tx = None
+        start = 1
+        while start <= 0xFFFF and (rx is None or tx is None):
+            r = _att(sock, struct.pack("<BHHH", 0x08, start, 0xFFFF, 0x2803), 0x09)
+            if not r:
+                break
+            step = r[1]
+            for i in range(2, len(r) - step + 1, step):
+                decl, _, value = struct.unpack("<HBH", r[i:i + 5])
+                if r[i + 5:i + step] == JBL_RX:
+                    rx = value
+                elif r[i + 5:i + step] == JBL_TX:
+                    tx = value
+                start = decl + 1
+        if rx is None or tx is None:
+            return None
+        # Turn on notifications through the client configuration descriptor (2902).
+        r = _att(sock, struct.pack("<BHH", 0x04, rx + 1, rx + 4), 0x05)
+        if not r or r[1] != 1:
+            return None
+        cccd = next((struct.unpack("<H", r[i:i + 2])[0] for i in range(2, len(r) - 3, 4)
+                     if r[i + 2:i + 4] == b"\x02\x29"), None)
+        if cccd is None or not _att(sock, struct.pack("<BHH", 0x12, cccd, 1), 0x13):
+            return None
+        sock.send(struct.pack("<BH", 0x52, tx) + JBL_INFO_REQUEST)
+        # The answer is a burst of notifications, and one frame can span two.
+        data = b""
+        end = time.monotonic() + 1.5
+        while time.monotonic() < end:
+            r = sock.recv(1024)
+            if len(r) > 3 and r[0] == 0x1B and struct.unpack("<H", r[1:3])[0] == rx:
+                data += r[3:]
+                found = parse_jbl_info(data)
+                if found:
+                    return found
+        return None
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
+def bluez_devices() -> list[dict]:
+    if not shutil.which("busctl"):
+        return []
+    try:
+        res = subprocess.run(["busctl", "--json=short", "call", "org.bluez", "/",
+                              "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"],
+                             capture_output=True, text=True, timeout=3)
+        objects = json.loads(res.stdout)["data"][0]
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, IndexError):
+        return []
+    out = []
+    for ifaces in objects.values():
+        dev = ifaces.get("org.bluez.Device1")
+        if dev:
+            out.append({k: v.get("data") for k, v in dev.items()})
+    return out
+
+
+def jbl(devices: list[dict]) -> list[dict]:
+    out = []
+    for dev in devices:
+        if not dev.get("Connected") or dev.get("AddressType") != "public":
+            continue
+        if not any(u.startswith(JBL_UUID_PREFIX) for u in dev.get("UUIDs") or []):
+            continue
+        reading = jbl_read(dev["Address"])
+        if not reading:
+            continue
+        level, charging = reading["level"], reading["charging"]
+        out.append({
+            "id": "jbl:" + dev["Address"],
+            "name": dev.get("Alias") or dev.get("Name") or reading["model"] or "JBL speaker",
+            "model": reading["model"],
+            "kind": "speakers",
+            "source": "jbl",
+            "level": level,
+            "charging": charging,
+            "status": "charging" if charging else ("full" if level >= 100 else "discharging"),
+            "connection": "bluetooth",
         })
     return out
 
@@ -741,6 +895,7 @@ def probe() -> dict:
         glorious_wired(nodes, denied),
         hyperx(nodes, denied),
         razer(),
+        jbl(bluez_devices()),
         parse_upower_dump(dump),
         headsetcontrol(),
         iphone(),

@@ -31,6 +31,8 @@ Panel {
   readonly property var laptop: client ? client.laptop : null
   readonly property var airpods: client ? client.airpods : null
   readonly property var devices: client ? client.devices : []
+  readonly property var speakers: Model.jblSpeakers(devices)
+  readonly property var others: Model.otherDevices(devices)
   readonly property int lowThreshold: hostWidget ? hostWidget.lowThreshold : 20
   readonly property bool needsAccess: !!client && client.needsAccess.length > 0
   readonly property var barDevices: Model.idList(setting("barDevices", null))
@@ -101,6 +103,8 @@ Panel {
     id: deviceRow
     property var device: null
     readonly property bool hasLevel: !!device && Model.hasLevel(device.level)
+    // A JBL speaker has no icon: its title is the JBL mark and the model.
+    readonly property bool jbl: !!device && device.source === "jbl"
 
     width: parent ? parent.width : 0
     spacing: Style.space(6)
@@ -111,6 +115,7 @@ Panel {
 
       Item {
         id: iconBox
+        visible: !deviceRow.jbl
         anchors.left: parent.left
         anchors.leftMargin: Style.space(8)
         anchors.verticalCenter: parent.verticalCenter
@@ -128,21 +133,37 @@ Panel {
 
       Column {
         id: labels
-        anchors.left: iconBox.right
-        anchors.leftMargin: Style.space(10)
+        anchors.left: deviceRow.jbl ? parent.left : iconBox.right
+        anchors.leftMargin: deviceRow.jbl ? Style.space(8) : Style.space(10)
         anchors.right: level.left
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(1)
 
-        Text {
+        Row {
           width: parent.width
-          textFormat: Text.PlainText
-          text: deviceRow.device ? deviceRow.device.name : ""
-          color: root.foreground
-          elide: Text.ElideRight
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
+          spacing: Style.space(5)
+
+          // Sized so the mark's letters stand as tall as the name's capitals.
+          Icon {
+            visible: deviceRow.jbl
+            anchors.verticalCenter: parent.verticalCenter
+            name: "jbl"
+            size: title.font.pixelSize
+            width: Math.round(title.font.pixelSize * 1.3)
+            color: root.foreground
+          }
+
+          Text {
+            id: title
+            width: parent.width - (deviceRow.jbl ? Math.round(font.pixelSize * 1.3) + parent.spacing : 0)
+            textFormat: Text.PlainText
+            text: deviceRow.jbl ? Model.jblTitle(deviceRow.device) : deviceRow.device ? deviceRow.device.name : ""
+            color: root.foreground
+            elide: Text.ElideRight
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
         }
 
         Row {
@@ -198,7 +219,7 @@ Panel {
 
     LevelBar {
       visible: deviceRow.hasLevel
-      x: Style.space(40)
+      x: deviceRow.jbl ? Style.space(8) : Style.space(40)
       width: parent.width - x - Style.space(4)
       level: deviceRow.hasLevel ? deviceRow.device.level : 0
       fill: deviceRow.device && deviceRow.device.charging ? root.accent : (deviceRow.hasLevel ? root.levelColor(deviceRow.device) : root.dim)
@@ -504,17 +525,47 @@ Panel {
               text: (root.airpods && root.airpods.model ? root.airpods.model + ". " : "") + "Connect them to see each bud and the case."
             }
 
-            // ----------------------------------------------------- devices
+            // --------------------------------------------------------- JBL
             PanelSeparator {
-              visible: (!!root.laptop || !!root.airpods) && root.devices.length > 0
+              visible: (!!root.laptop || !!root.airpods) && root.speakers.length > 0
               foreground: root.foreground
             }
 
             SectionHeader {
-              visible: root.devices.length > 0 || (!root.laptop && !root.airpods)
+              visible: root.speakers.length > 0
+              icon: "jbl"
+              title: "SPEAKERS"
+              detail: Model.jblStatus(root.speakers).toUpperCase()
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Column {
+              visible: root.speakers.length > 0
+              width: parent.width
+              spacing: Style.space(14)
+
+              Repeater {
+                model: root.speakers
+
+                DeviceRow {
+                  required property var modelData
+                  device: modelData
+                }
+              }
+            }
+
+            // ----------------------------------------------------- devices
+            PanelSeparator {
+              visible: (!!root.laptop || !!root.airpods || root.speakers.length > 0) && root.others.length > 0
+              foreground: root.foreground
+            }
+
+            SectionHeader {
+              visible: root.others.length > 0 || root.devices.length === 0 && !root.laptop && !root.airpods
               icon: "devices"
               title: "DEVICES"
-              detail: root.devices.length > 0 ? root.devices.length + " FOUND" : ""
+              detail: root.others.length > 0 ? root.others.length + " FOUND" : ""
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -532,12 +583,12 @@ Panel {
             }
 
             Column {
-              visible: root.devices.length > 0
+              visible: root.others.length > 0
               width: parent.width
               spacing: Style.space(14)
 
               Repeater {
-                model: root.devices
+                model: root.others
 
                 DeviceRow {
                   required property var modelData

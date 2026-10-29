@@ -190,6 +190,56 @@ class OtherParsersTest(unittest.TestCase):
         self.assertEqual(pb.merge([[a], [b]]), [a])
 
 
+# What a Charge 5 renamed "Sound object" sent back for AA 11 00: its name,
+# two unknown tokens, battery, two more, its address and one more.
+JBL_REPLY = bytes.fromhex(
+    "aa120f00c10c536f756e64206f626a656374" "aa120400422040" "aa1203004307" "aa120300443c"
+    "aa1203004600" "aa1203004701" "aa12080048f85c7e7dfb35" "aa1204004acea2")
+
+
+class JblTest(unittest.TestCase):
+    def test_battery_from_a_charge_5(self):
+        self.assertEqual(pb.parse_jbl_info(JBL_REPLY), {"level": 60, "charging": False, "model": "JBL Charge 5"})
+
+    def test_charging_bit(self):
+        self.assertEqual(pb.parse_jbl_info(bytes.fromhex("aa120300448a")), {"level": 10, "charging": True, "model": None})
+
+    def test_frame_split_across_notifications(self):
+        self.assertIsNone(pb.parse_jbl_info(bytes.fromhex("aa12030044")))
+        self.assertEqual(pb.parse_jbl_info(bytes.fromhex("aa1203004307aa12030044") + b"\x1e"), {"level": 30, "charging": False, "model": None})
+
+    def test_boombox_3(self):
+        reply = bytes.fromhex("aa12040042206daa120300445a")
+        self.assertEqual(pb.parse_jbl_info(reply), {"level": 90, "charging": False, "model": "JBL Boombox 3"})
+
+    def test_unknown_model(self):
+        self.assertEqual(pb.parse_jbl_info(bytes.fromhex("aa12040042ffffaa1203004450"))["model"], None)
+
+    def test_no_battery_token(self):
+        self.assertIsNone(pb.parse_jbl_info(bytes.fromhex("aa1203004307aa1203004600")))
+        self.assertIsNone(pb.parse_jbl_info(bytes.fromhex("aa1203004465")))  # 101 is no level
+
+    def test_only_connected_jbl_speakers_are_asked(self):
+        asked = []
+        real = pb.jbl_read
+        pb.jbl_read = lambda address: asked.append(address) or {"level": 100, "charging": False, "model": "JBL Charge 5"}
+        try:
+            devs = pb.jbl([
+                {"Address": "F8:5C:7E:7D:FB:35", "AddressType": "public", "Alias": "Sound object", "Connected": True,
+                 "UUIDs": ["0000110b-0000-1000-8000-00805f9b34fb", "65786365-6c70-6f69-6e74-2e04ff402007"]},
+                {"Address": "AA:00:00:00:00:01", "AddressType": "public", "Alias": "JBL Boombox 3", "Connected": False,
+                 "UUIDs": ["65786365-6c70-6f69-6e74-2e636f6d0000"]},
+                {"Address": "AA:00:00:00:00:02", "AddressType": "public", "Alias": "WH-1000XM5", "Connected": True,
+                 "UUIDs": ["0000110b-0000-1000-8000-00805f9b34fb"]},
+            ])
+        finally:
+            pb.jbl_read = real
+        self.assertEqual(asked, ["F8:5C:7E:7D:FB:35"])
+        [dev] = devs
+        self.assertEqual((dev["name"], dev["model"], dev["kind"], dev["level"], dev["status"], dev["connection"]),
+                         ("Sound object", "JBL Charge 5", "speakers", 100, "full", "bluetooth"))
+
+
 def write_supply(root, name, **files):
     d = os.path.join(root, name)
     os.makedirs(d)

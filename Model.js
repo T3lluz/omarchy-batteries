@@ -30,6 +30,31 @@ function kindIcon(kind) {
   return KIND_ICONS[kind] || "battery"
 }
 
+// What a device is called in the panel: the model when the reader knows it
+// (a JBL speaker renamed in the JBL app), else its name.
+function deviceTitle(device) {
+  return device ? device.model || device.name || "" : ""
+}
+
+// A JBL row draws the JBL mark itself, so its title drops the brand.
+function jblTitle(device) {
+  return deviceTitle(device).replace(/^JBL\s+/i, "")
+}
+
+// JBL speakers get their own panel section; everything else is a device.
+function jblSpeakers(devices) {
+  return (devices || []).filter(function(d) { return d.source === "jbl" })
+}
+
+function otherDevices(devices) {
+  return (devices || []).filter(function(d) { return d.source !== "jbl" })
+}
+
+function jblStatus(speakers) {
+  var n = (speakers || []).length
+  return n === 1 ? "1 connected" : n + " connected"
+}
+
 function connectionIcon(connection) {
   return CONNECTION_ICONS[connection] || ""
 }
@@ -37,6 +62,7 @@ function connectionIcon(connection) {
 function kindLabel(kind) {
   if (kind === "gaming-input") return "Controller"
   if (kind === "ups") return "UPS"
+  if (kind === "speakers") return "Speaker"
   if (!kind) return "Device"
   var s = String(kind).replace(/-/g, " ")
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -155,6 +181,8 @@ function connectionText(device) {
 
 function subtitle(device) {
   var parts = [statusText(device)]
+  // The title is the model, so the name given in the JBL app goes here.
+  if (device && device.model && device.name && device.model !== device.name) parts.unshift(device.name)
   var conn = connectionText(device)
   if (conn) parts.push(conn)
   if (device && device.stale && device.status !== "discharging") parts.push("last level")
@@ -324,7 +352,7 @@ function barPicks(state) {
     if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", icon: "device-airpods-case", label: "AirPods case", hint: "While the case is open and in range", fallback: false })
   }
   ;((state && state.devices) || []).forEach(function(d) {
-    picks.push({ device: d, icon: kindIcon(d.kind), label: d.name, hint: kindLabel(d.kind) + " · " + subtitle(d) })
+    picks.push({ device: d, icon: kindIcon(d.kind), label: deviceTitle(d), hint: kindLabel(d.kind) + " · " + subtitle(d) })
   })
   return picks
 }

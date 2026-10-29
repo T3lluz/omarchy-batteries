@@ -11,6 +11,12 @@ Icon {
   // Unused here; kept so every plugin's Glyph takes the same properties.
   property string fontFamily: Style.font.family
 
+  // A section header gives its icon a box wider than the icon's size. There
+  // every icon fills that width, as the JBL wordmark must to be legible, so
+  // all the section marks come out one size. Only SectionHeader has a
+  // detailColor, so the kit files stay as they are in the other plugins.
+  fullWidth: !!parent && parent.detailColor !== undefined
+
   name: icon || "battery"
   size: Style.font.body
   color: Commons.Color.foreground
