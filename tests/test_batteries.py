@@ -315,6 +315,14 @@ class AirPodsTest(unittest.TestCase):
         self.assertEqual(p["left"], {"level": 80, "charging": False, "inEar": True})
         self.assertEqual(p["case"], {"level": 40, "charging": True})
 
+    def test_charging_follows_the_emptier_bud(self):
+        worn = {"available": True, "level": 80, "charging": False, "in_ear": True}
+        cased = {"available": True, "level": 30, "charging": True, "in_ear": False}
+        p = pb.parse_librepods(self.status(left=worn, right=cased))
+        self.assertEqual((p["level"], p["charging"]), (30, True))
+        p = pb.parse_librepods(self.status(left=dict(worn, level=20), right=cased))
+        self.assertEqual((p["level"], p["charging"]), (20, False))
+
     def test_unavailable_parts_are_none(self):
         off = {"available": False, "level": 0, "charging": False, "in_ear": False}
         p = pb.parse_librepods(self.status(connected=False, left=off, right=off, case=off))

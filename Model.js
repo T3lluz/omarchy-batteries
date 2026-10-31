@@ -348,7 +348,7 @@ function barPicks(state) {
   var picks = []
   var lap = state ? state.laptop : null
   if (lap) {
-    picks.push({ key: "barLaptop", icon: "device-laptop", label: "Laptop", hint: "Its level, with a bolt while it charges", fallback: true })
+    picks.push({ key: "barLaptop", icon: "device-laptop", label: "Laptop", hint: "Its level; charge flows up through the icon while it charges", fallback: true })
     picks.push({ key: "barLaptopRate", icon: "bolt", label: "Laptop power", hint: "Watts going in or out", fallback: false })
     picks.push({ key: "barLaptopTime", icon: "clock-hour-4", label: "Laptop time", hint: "Time left, or time to full while charging", fallback: false })
   }

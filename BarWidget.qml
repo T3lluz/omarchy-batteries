@@ -6,7 +6,7 @@ import qs.Ui
 import "Model.js" as Model
 
 // Bar entry: the batteries picked in settings, each as an icon and level,
-// with a bolt while it charges. The bar draws this widget once per monitor;
+// bands rising through the icon while it charges. The bar draws this widget once per monitor;
 // the first instance owns the poller and the others read from it.
 BarWidget {
   id: root
@@ -218,27 +218,13 @@ BarWidget {
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(3)
 
-          Icon {
-            visible: modelData.icon !== "airpods"
+          BarIcon {
             anchors.verticalCenter: parent.verticalCenter
             name: modelData.icon
             size: Style.bar.iconFont
             color: root.toneColor(modelData.tone)
-          }
-
-          AirPodsIcon {
-            visible: modelData.icon === "airpods"
-            anchors.verticalCenter: parent.verticalCenter
-            iconSize: Style.bar.iconFont
-            color: root.toneColor(modelData.tone)
             variant: Model.airpodsVariant(root.batteryState.airpods)
-          }
-
-          BoltIcon {
-            visible: modelData.charging
-            anchors.verticalCenter: parent.verticalCenter
-            implicitHeight: Math.round(button.fontSize * 1.05)
-            color: Color.accent
+            charging: modelData.charging
           }
 
           Text {

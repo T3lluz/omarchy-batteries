@@ -711,8 +711,11 @@ def parse_librepods(text: str) -> dict | None:
         charging = bool(headset and headset["charging"])
     else:
         # The bar shows the emptier bud: that is the one that ends the session.
-        level = min(p["level"] for p in buds) if buds else None
-        charging = bool(buds) and all(p["charging"] for p in buds)
+        # Charging follows that bud too, so one bud charging in the case while
+        # the other is worn shows as charging only if its level is the one shown.
+        shown = min(buds, key=lambda p: p["level"]) if buds else None
+        level = shown["level"] if shown else None
+        charging = bool(shown and shown["charging"])
     return {
         "name": s.get("device_name") or s.get("model_name") or "AirPods",
         "model": s.get("model_name") or "",
