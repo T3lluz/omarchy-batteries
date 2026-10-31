@@ -29,7 +29,7 @@ Panel {
 
   readonly property var updater: client ? client.updater : null
   readonly property var laptop: client ? client.laptop : null
-  readonly property var airpods: client ? client.airpods : null
+  readonly property var airpods: client && Model.airpodsShown(client.airpods) ? client.airpods : null
   readonly property var devices: client ? client.devices : []
   readonly property var speakers: Model.jblSpeakers(devices)
   readonly property var others: Model.otherDevices(devices)
@@ -522,7 +522,7 @@ Panel {
               width: parent.width
               leftPadding: Style.space(8)
               wrapMode: Text.WordWrap
-              text: (root.airpods && root.airpods.model ? root.airpods.model + ". " : "") + "Connect them to see each bud and the case."
+              text: (root.airpods && root.airpods.model ? root.airpods.model + ". " : "") + "Waiting for each bud and the case…"
             }
 
             // --------------------------------------------------------- JBL

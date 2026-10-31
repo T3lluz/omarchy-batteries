@@ -270,6 +270,12 @@ function airpodsTiles(pods) {
   })
 }
 
+// The panel shows AirPods only while they are connected, the way a mouse
+// that is switched off drops out of the device list.
+function airpodsShown(pods) {
+  return !!pods && pods.connected === true
+}
+
 function airpodsStatus(pods) {
   if (!pods) return ""
   if (pods.stale) return "Not connected · last levels"
@@ -347,7 +353,7 @@ function barPicks(state) {
     picks.push({ key: "barLaptopTime", icon: "clock-hour-4", label: "Laptop time", hint: "Time left, or time to full while charging", fallback: false })
   }
   var pods = state ? state.airpods : null
-  if (pods) {
+  if (airpodsShown(pods)) {
     picks.push({ key: "barAirpods", icon: "device-airpods", label: pods.name || "AirPods", hint: "The emptier bud, while they are connected", fallback: true })
     if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", icon: "device-airpods-case", label: "AirPods case", hint: "While the case is open and in range", fallback: false })
   }

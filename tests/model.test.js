@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, deviceTitle, jblTitle, jblSpeakers, otherDevices, jblStatus, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopTiles, laptopEnergy, summary, airpodsParts, airpodsTiles, barPicks, barPickedText, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainText, lowBatteryAlerts, alertables, tooltip }")()
+const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, deviceTitle, jblTitle, jblSpeakers, otherDevices, jblStatus, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopTiles, laptopEnergy, summary, airpodsParts, airpodsTiles, barPicks, barPickedText, airpodsShown, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainText, lowBatteryAlerts, alertables, tooltip }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -143,13 +143,20 @@ assert.deepStrictEqual(Model.airpodsParts(podsFresh).map(p => p.key), ["left", "
 assert.deepStrictEqual(Model.airpodsParts({ isHeadset: true, headset: { level: 50 } }).map(p => p.key), ["headset"])
 assert.deepStrictEqual(Model.airpodsTiles(podsFresh).map(t => [t.caption, t.icon, t.value]), [["LEFT", "device-airpods", "80%"], ["RIGHT", "device-airpods", "70%"], ["CASE", "bolt", "50%"]])
 assert.strictEqual(Model.airpodsTiles(podsGone).length, 3)
+// Like any other device, AirPods leave the panel when they disconnect, last levels or not.
+assert.strictEqual(Model.airpodsShown(podsFresh), true)
+assert.strictEqual(Model.airpodsShown(podsGone), false)
+assert.strictEqual(Model.airpodsShown(podsKept), false)
+assert.strictEqual(Model.airpodsShown(null), false)
 
 // The bar picker: laptop, AirPods, then each peripheral.
 {
   const picks = Model.barPicks({ laptop: onBattery, airpods: podsFresh, devices: [wireless] })
   assert.deepStrictEqual(picks.map(p => p.key || p.device.id), ["barLaptop", "barLaptopRate", "barLaptopTime", "barAirpods", "barAirpodsCase", "glorious:2022"])
   assert.strictEqual(picks[5].icon, "mouse")
-  assert.ok(!Model.barPicks({ airpods: { isHeadset: true, name: "AirPods Max" }, devices: [] }).some(p => p.key === "barAirpodsCase"))
+  assert.ok(!Model.barPicks({ airpods: { isHeadset: true, connected: true, name: "AirPods Max" }, devices: [] }).some(p => p.key === "barAirpodsCase"))
+  assert.ok(Model.barPicks({ airpods: { isHeadset: true, connected: true, name: "AirPods Max" }, devices: [] }).some(p => p.key === "barAirpods"))
+  assert.ok(!Model.barPicks({ airpods: podsKept, devices: [] }).some(p => p.key.startsWith("barAirpods")))
   assert.strictEqual(Model.barPickedText(0), "ICON ONLY")
   assert.strictEqual(Model.barPickedText(2), "2 SHOWN")
 }
