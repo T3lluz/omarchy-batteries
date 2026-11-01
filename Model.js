@@ -26,6 +26,24 @@ var KIND_ICONS = {
 var CONNECTION_LABELS = { usb: "USB cable", wireless: "2.4 GHz", bluetooth: "Bluetooth" }
 var CONNECTION_ICONS = { usb: "usb", wireless: "antenna-bars-5", bluetooth: "bluetooth" }
 
+// The panel's solid drawing for a kind, from Glyphs.js, or "" where there is
+// none and the panel falls back to the kind's icon.
+var KIND_GLYPHS = {
+  "mouse": "mouse",
+  "keyboard": "keyboard",
+  "headset": "headphones",
+  "headphones": "headphones",
+  "speakers": "speaker",
+  "gaming-input": "gamepad",
+  "tablet": "tablet",
+  "phone": "phone",
+  "laptop": "laptop"
+}
+
+function kindGlyph(kind) {
+  return KIND_GLYPHS[kind] || ""
+}
+
 function kindIcon(kind) {
   return KIND_ICONS[kind] || "battery"
 }
@@ -207,24 +225,29 @@ function laptopStatus(lap) {
   return "Unknown"
 }
 
-// The laptop's three stat tiles: power in or out, health, then the charge
-// limit (or the cycle count, or the stored energy, whichever the pack has).
-function laptopTiles(lap) {
+// The laptop's readings beside its drawing, as label and value rows: power
+// in or out, health, the charge limit, cycles, stored energy, and the
+// average drain on battery once there is one (null until then).
+function laptopFacts(lap, drainPerHour) {
   if (!lap) return []
-  var power = { icon: "bolt", caption: "POWER", value: watts(lap.rateW), note: "Idle" }
-  if (lap.status === "charging") power.note = "Charging"
-  else if (lap.status === "discharging") power.note = "On battery"
-  else if (lap.acOnline) power.note = "Plugged in"
-  var tiles = [power]
-  if (hasLevel(lap.health))
-    tiles.push({ icon: "heartbeat", caption: "HEALTH", value: lap.health + "%", note: lap.energyDesignWh ? "of " + lap.energyDesignWh + " Wh new" : "" })
-  if (lap.chargeLimit)
-    tiles.push({ icon: "battery-eco", caption: "LIMIT", value: (lap.chargeStart ? lap.chargeStart + "–" : "") + lap.chargeLimit + "%", note: lap.cycles ? lap.cycles + " cycles" : "Stops charging" })
-  else if (lap.cycles)
-    tiles.push({ icon: "repeat", caption: "CYCLES", value: String(lap.cycles), note: "" })
-  if (tiles.length < 3 && lap.energyFullWh)
-    tiles.push({ icon: "battery-2", caption: "STORED", value: lap.energyWh + " Wh", note: "of " + lap.energyFullWh + " Wh" })
-  return tiles.slice(0, 3)
+  var facts = [{ label: "Power", value: watts(lap.rateW) }]
+  if (hasLevel(lap.health)) facts.push({ label: "Health", value: lap.health + "%" })
+  if (lap.chargeLimit) facts.push({ label: "Limit", value: (lap.chargeStart ? lap.chargeStart + "–" : "") + lap.chargeLimit + "%" })
+  if (lap.cycles) facts.push({ label: "Cycles", value: String(lap.cycles) })
+  var energy = laptopEnergy(lap)
+  if (energy) facts.push({ label: "Energy", value: energy })
+  if (drainPerHour !== null && drainPerHour !== undefined)
+    facts.push({ label: "Drain", value: drainRate(drainPerHour) })
+  return facts
+}
+
+// A status such as "Plugged in · held at 90% limit" as one line per part,
+// each starting with a capital, for the panel's big laptop reading where
+// the joined line would wrap mid-phrase.
+function statusLines(text) {
+  return String(text || "").split(" · ").map(function(part) {
+    return part.charAt(0).toUpperCase() + part.slice(1)
+  }).join("\n")
 }
 
 // What the pack holds now against what it holds full.
@@ -251,23 +274,6 @@ function airpodsParts(pods) {
     { key: "right", label: "Right", icon: "airpods", pod: pods.right },
     { key: "case", label: "Case", icon: "device-airpods-case", pod: pods["case"] }
   ]
-}
-
-// AirPods as stat tiles: each bud and the case, a bolt for the icon while
-// that part charges.
-function airpodsTiles(pods) {
-  return airpodsParts(pods).map(function(part) {
-    var pod = part.pod
-    return {
-      key: part.key,
-      icon: pod && pod.charging ? "bolt" : (part.key === "case" ? "device-airpods-case" : "device-airpods"),
-      caption: part.label.toUpperCase(),
-      value: pod ? percent(pod.level) : "--",
-      level: pod && hasLevel(pod.level) ? pod.level : null,
-      charging: !!pod && !!pod.charging,
-      pod: pod
-    }
-  })
 }
 
 // The panel shows AirPods only while they are connected, the way a mouse
@@ -545,8 +551,8 @@ function drainPerHour(history, nowSec, hours) {
   return dropped / (seconds / 3600)
 }
 
-function drainText(perHour) {
+function drainRate(perHour) {
   if (perHour === null || perHour === undefined) return ""
-  return (perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10) + "%/h on battery"
+  return (perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10) + "%/h"
 }
 

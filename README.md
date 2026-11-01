@@ -4,24 +4,24 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.5.1-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.6.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-34413e" />
   </p>
   <p><a href="#install"><b>Install</b></a> · <a href="#features">Features</a> · <a href="#supported-batteries">Supported batteries</a> · <a href="#settings">Settings</a> · <a href="#commands">Commands</a></p>
-  <img src="assets/preview.png" width="380" alt="The Batteries panel: laptop with its last 12 hours, AirPods bud by bud, and a mouse" />
+  <img src="assets/preview.png" width="380" alt="The Batteries panel: the laptop drawn with its level and readings, the two AirPods with a level beside each, and a mouse" />
 </div>
 
 ## Features
 
 - **The bar shows what you pick:** laptop level, its charge or discharge rate in watts, time left or to full, AirPods (the emptier bud) and their case, any peripheral one toggle each, percentages on or off. While something is on a charger, its icon dims and bright bands rise through it, like charge flowing in. It keeps going when the battery is full or held at a limit, so you can see the charger is connected.
-- **Laptop:** level with the charge limit marked, the rate, energy in Wh, health against the design capacity, cycles, charge limit and power source.
-- **Charge history:** the last 12 hours as a graph, plugged-in stretches in the accent colour, and your average drain on battery (time spent plugged in, even held at a charge limit, never counts as drain). It is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
-- **AirPods:** each bud and the case with level, charging and in-ear state, or an AirPods Max's single battery. Like any other device, they leave the panel when they disconnect; the bar tooltip keeps their last seen levels.
+- **Laptop:** drawn big with its level on the display and its readings beside it: what it is doing, the power in or out, health against the design capacity, the charge limit, cycles and energy in Wh. While it is plugged in the drawing pulses, and so does anything else in the panel that is charging.
+- **Drain:** your average drain on battery over the last 12 hours, listed beside the laptop. Time spent plugged in, even held at a charge limit, never counts. The charge history behind it is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
+- **AirPods:** the two buds drawn facing each other with each level on its own side, the case underneath, charging and in-ear state, or an AirPods Max's single battery. Like any other device, they leave the panel when they disconnect; the bar tooltip keeps their last seen levels.
 - **JBL speakers:** their own section under the JBL mark, each titled with the mark and its model (Charge 5, Boombox 3, ...), the name you gave it in the JBL app underneath, with level and charging, read the way the JBL Portable app reads them.
-- **Devices:** every peripheral with a level bar, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
+- **Devices:** every peripheral drawn solid like the AirPods (mouse, keyboard, speaker, headphones, controller, phone, tablet), with its level, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
 - **Live:** plugging a cable or the charger in or out refreshes within a second or two (it listens to udev), as does any change librepods reports for your AirPods.
 - **Low battery:** one notification when a peripheral or your AirPods drop below the threshold. The laptop keeps Omarchy's own warning.
 - **Updates from the panel:** Settings says when a new version is on GitHub and installs it with one click. Edits you made in the plugin folder are kept in `git stash`, not lost.
@@ -115,6 +115,7 @@ Glorious Model O Wireless          mouse       83% ⚡  charging, usb via glorio
 node tests/model.test.js
 python3 -B -m unittest discover tests
 python3 scripts/fetch-icons.py    # refetch the Tabler icons, regenerate Icons.js
+python3 scripts/draw-glyphs.py    # redraw the panel's device drawings, regenerate Glyphs.js
 omarchy restart shell             # pick up QML changes
 ```
 

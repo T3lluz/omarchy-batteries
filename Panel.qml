@@ -6,9 +6,10 @@ import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Every battery, in the same sections, tiles and rows as ROG Deck and Sonus:
-// the laptop with its draw, health and the last hours, AirPods bud by bud,
-// and the peripherals. The gear swaps them for what the bar shows.
+// Every battery, each device drawn big with its level beside it: the laptop
+// with its readings, AirPods bud by bud, then the peripherals. Anything that
+// charges pulses. The gear swaps them for the settings, which keep the
+// family's panel kit.
 Panel {
   id: root
   moduleName: "io.github.t3lluz.batteries"
@@ -40,8 +41,8 @@ Panel {
   readonly property var thresholds: [5, 10, 15, 20, 25, 30]
   readonly property real historyHours: 12
   readonly property var history: client ? client.history : []
-  readonly property bool hasHistory: Model.historySince(history, Date.now() / 1000, historyHours).length > 1
-  // Null until half an hour on battery has been seen.
+  // The average drain on battery over the last hours, from the client's
+  // charge history. Null until half an hour on battery has been seen.
   readonly property var drain: Model.drainPerHour(history, Date.now() / 1000, historyHours)
 
   readonly property var barPicks: Model.barPicks({ laptop: laptop, airpods: airpods, devices: devices })
@@ -55,6 +56,15 @@ Panel {
   readonly property real sectionGap: Style.space(12)
   readonly property real tileGap: Style.space(8)
   readonly property real iconSize: Style.font.display
+  // The gap between a name and its status line.
+  readonly property real lineGap: Style.space(3)
+  readonly property real budNumberSize: Math.round(Style.font.display * 1.75)
+  // A device's icon runs from its name's cap height to its status's
+  // baseline.
+  readonly property real deviceIconSize: nameType.height + lineGap + smallType.height - capInset(nameType) - smallType.descent
+
+  // How far below a line's top its capitals start.
+  function capInset(metrics) { return metrics.ascent - metrics.tightBoundingRect("H").height }
 
   function setting(name, fallback) { return prefs ? prefs.get(name, fallback) : fallback }
 
@@ -97,133 +107,226 @@ Panel {
   }
   onSetupOpenChanged: if (panelFlick) panelFlick.contentY = 0
 
-  // One peripheral, laid out like ROG Deck's option rows: icon, name over
-  // status, the level on the right and a bar beneath.
-  component DeviceRow: Column {
+  // A reading as the panel prints it: the number big, the percent sign small
+  // and dim beside it, or two dashes when there is none.
+  component Reading: Row {
+    id: reading
+    property var level: null
+    property real size: Style.font.heading
+    property color color: root.foreground
+    readonly property bool known: Model.hasLevel(level)
+
+    spacing: Style.space(1)
+
+    Text {
+      id: number
+      textFormat: Text.PlainText
+      text: reading.known ? String(Math.round(reading.level)) : "--"
+      color: reading.known ? reading.color : root.dim
+      font.family: root.fontFamily
+      font.pixelSize: reading.size
+      font.bold: true
+    }
+
+    Text {
+      visible: reading.known
+      anchors.baseline: number.baseline
+      textFormat: Text.PlainText
+      text: "%"
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Math.round(reading.size * 0.5)
+      font.bold: true
+    }
+  }
+
+  // A Tabler icon, filled where Tabler has a filled one, for kinds without a
+  // drawing of their own. Fitted by what it draws rather than its 24-unit box,
+  // so it can start and end on a line of text. `ink` is the drawing's extent on
+  // Tabler's grid as [left, top, right, bottom], and the item is that box.
+  component InkIcon: Item {
+    id: inkIcon
+    property string name: "battery"
+    property var ink: [2, 2, 22, 22]
+    property color color: root.foreground
+    readonly property real unit: height / (ink[3] - ink[1])
+
+    Icon {
+      name: inkIcon.name
+      solid: true
+      size: inkIcon.unit * 24
+      color: inkIcon.color
+      x: -inkIcon.unit * inkIcon.ink[0]
+      y: -inkIcon.unit * inkIcon.ink[1]
+    }
+  }
+
+  // One bud: half of the AirPods drawing, cut where the pair meets and set
+  // against the inner edge, so the two buds face each other. Its ink fills
+  // the item's height.
+  component BudArt: Item {
+    id: budArt
+    property bool rightBud: false
+    property string variant: "pro"
+    property color color: root.foreground
+    clip: true
+
+    AirPodsIcon {
+      id: pair
+      variant: budArt.variant
+      color: budArt.color
+      // The pair is fitted by its width, so this makes its ink as tall as
+      // the bud's box.
+      iconSize: budArt.height * pair.ink[2] / pair.ink[3]
+      x: budArt.rightBud ? -iconSize / 2 : budArt.width - iconSize / 2
+      y: -(iconSize - budArt.height) / 2
+    }
+  }
+
+  // A bud's level beside it, set against the bud. The label says which bud,
+  // or that it is charging, on one line so both buds keep one height.
+  component BudReading: Column {
+    id: budReading
+    property var pod: null
+    property string label: ""
+    property bool alignRight: false
+    property bool stale: false
+
+    // Room for "100%" at the bud size.
+    width: Math.round(root.budNumberSize * 2.2)
+    spacing: Style.space(2)
+
+    Reading {
+      anchors.right: budReading.alignRight ? parent.right : undefined
+      level: budReading.pod ? budReading.pod.level : null
+      size: root.budNumberSize
+      color: budReading.pod && !budReading.stale ? root.levelColor(budReading.pod) : root.dim
+    }
+
+    Text {
+      width: parent.width
+      horizontalAlignment: budReading.alignRight ? Text.AlignRight : Text.AlignLeft
+      textFormat: Text.PlainText
+      text: budReading.pod && budReading.pod.charging ? "Charging" : budReading.label
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+  }
+
+  // One peripheral: its icon (pulsing while on power), the name over its
+  // status, and the reading on the right. The icon runs from the name's cap
+  // height to the status's baseline.
+  component DeviceRow: Item {
     id: deviceRow
     property var device: null
     readonly property bool hasLevel: !!device && Model.hasLevel(device.level)
-    // A JBL speaker has no icon: its title is the JBL mark and the model.
+    // A JBL speaker's title is the JBL mark and the model.
     readonly property bool jbl: !!device && device.source === "jbl"
 
     width: parent ? parent.width : 0
-    spacing: Style.space(6)
+    height: labels.implicitHeight
 
-    Item {
-      width: parent.width
-      height: Math.max(Style.font.title, labels.implicitHeight)
-
-      Item {
-        id: iconBox
-        visible: !deviceRow.jbl
-        anchors.left: parent.left
-        anchors.leftMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(22)
-        height: Style.font.title
-
-        Icon {
-          anchors.centerIn: parent
-          name: deviceRow.device ? Model.kindIcon(deviceRow.device.kind) : "battery"
-          size: Style.font.title
-          color: root.foreground
-          opacity: deviceRow.hasLevel ? 1 : 0.6
-        }
-      }
-
-      Column {
-        id: labels
-        anchors.left: deviceRow.jbl ? parent.left : iconBox.right
-        anchors.leftMargin: deviceRow.jbl ? Style.space(8) : Style.space(10)
-        anchors.right: level.left
-        anchors.rightMargin: Style.space(10)
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(1)
-
-        Row {
-          width: parent.width
-          spacing: Style.space(5)
-
-          // Sized so the mark's letters stand as tall as the name's capitals.
-          Icon {
-            visible: deviceRow.jbl
-            anchors.verticalCenter: parent.verticalCenter
-            name: "jbl"
-            size: title.font.pixelSize
-            width: Math.round(title.font.pixelSize * 1.3)
+    // The drawings share one column, as wide as a keyboard needs, so every
+    // name starts at the same place.
+    ChargeGlyph {
+      id: deviceGlyph
+      readonly property string drawing: deviceRow.device ? Model.kindGlyph(deviceRow.device.kind) : ""
+      x: Style.space(2)
+      y: root.capInset(nameType)
+      width: Math.round(root.deviceIconSize * 1.5)
+      height: root.deviceIconSize
+      charging: !!deviceRow.device && (deviceRow.device.powered === true || deviceRow.device.charging === true)
+      opacity: deviceRow.hasLevel && !deviceRow.device.stale ? 1 : 0.6
+      glyph: Component {
+        Item {
+          DeviceGlyph {
+            visible: deviceGlyph.drawing !== ""
+            anchors.fill: parent
+            name: deviceGlyph.drawing
             color: root.foreground
           }
 
-          Text {
-            id: title
-            width: parent.width - (deviceRow.jbl ? Math.round(font.pixelSize * 1.3) + parent.spacing : 0)
-            textFormat: Text.PlainText
-            text: deviceRow.jbl ? Model.jblTitle(deviceRow.device) : deviceRow.device ? deviceRow.device.name : ""
-            color: root.foreground
-            elide: Text.ElideRight
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
+          InkIcon {
+            visible: deviceGlyph.drawing === ""
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: parent.height
+            width: height
+            name: deviceRow.device ? Model.kindIcon(deviceRow.device.kind) : "battery"
           }
-        }
-
-        Row {
-          width: parent.width
-          spacing: Style.space(4)
-
-          Icon {
-            readonly property string conn: deviceRow.device ? Model.connectionIcon(deviceRow.device.connection) : ""
-            visible: conn !== ""
-            anchors.verticalCenter: parent.verticalCenter
-            name: conn || "battery"
-            size: Style.font.caption
-            color: root.foreground
-            opacity: 0.55
-          }
-
-          Caption {
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            width: parent.width - Style.font.caption - parent.spacing
-            wrapMode: Text.NoWrap
-            elide: Text.ElideRight
-            text: deviceRow.device ? Model.subtitle(deviceRow.device) : ""
-          }
-        }
-      }
-
-      Row {
-        id: level
-        anchors.right: parent.right
-        anchors.rightMargin: Style.space(4)
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(4)
-
-        BoltIcon {
-          visible: !!deviceRow.device && deviceRow.device.charging
-          anchors.verticalCenter: parent.verticalCenter
-          implicitHeight: Style.font.body
-          color: root.accent
-        }
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          textFormat: Text.PlainText
-          text: deviceRow.device ? Model.percent(deviceRow.device.level) : "--"
-          color: deviceRow.hasLevel ? root.levelColor(deviceRow.device) : root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.title
-          font.bold: true
         }
       }
     }
 
-    LevelBar {
-      visible: deviceRow.hasLevel
-      x: deviceRow.jbl ? Style.space(8) : Style.space(40)
-      width: parent.width - x - Style.space(4)
-      level: deviceRow.hasLevel ? deviceRow.device.level : 0
-      fill: deviceRow.device && deviceRow.device.charging ? root.accent : (deviceRow.hasLevel ? root.levelColor(deviceRow.device) : root.dim)
-      markerColor: root.dim
+    Column {
+      id: labels
+      anchors.left: deviceGlyph.right
+      anchors.leftMargin: Style.space(16)
+      anchors.right: level.left
+      anchors.rightMargin: Style.space(12)
+      spacing: root.lineGap
+
+      Row {
+        width: parent.width
+        spacing: Style.space(5)
+
+        // Sized so the mark's letters stand as tall as the name's capitals.
+        Icon {
+          visible: deviceRow.jbl
+          anchors.verticalCenter: parent.verticalCenter
+          name: "jbl"
+          size: title.font.pixelSize
+          width: Math.round(title.font.pixelSize * 1.3)
+          color: root.foreground
+        }
+
+        Text {
+          id: title
+          width: parent.width - (deviceRow.jbl ? Math.round(font.pixelSize * 1.3) + parent.spacing : 0)
+          textFormat: Text.PlainText
+          text: deviceRow.jbl ? Model.jblTitle(deviceRow.device) : deviceRow.device ? deviceRow.device.name : ""
+          color: root.foreground
+          wrapMode: Text.WordWrap
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.subtitle
+        }
+      }
+
+      Row {
+        width: parent.width
+        spacing: Style.space(5)
+
+        Icon {
+          id: connIcon
+          readonly property string conn: deviceRow.device ? Model.connectionIcon(deviceRow.device.connection) : ""
+          visible: conn !== ""
+          anchors.verticalCenter: status.verticalCenter
+          name: conn || "battery"
+          size: Style.font.caption
+          color: root.dim
+        }
+
+        Text {
+          id: status
+          width: parent.width - (connIcon.visible ? connIcon.width + parent.spacing : 0)
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          text: deviceRow.device ? Model.subtitle(deviceRow.device) : ""
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+    }
+
+    Reading {
+      id: level
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(2)
+      anchors.verticalCenter: deviceGlyph.verticalCenter
+      level: deviceRow.hasLevel ? deviceRow.device.level : null
+      size: Style.font.display
+      color: deviceRow.hasLevel ? root.levelColor(deviceRow.device) : root.dim
     }
   }
 
@@ -305,10 +408,11 @@ Panel {
           PanelSeparator { foreground: root.foreground }
 
           // ======================================================== batteries
+          // Roomier than the settings: the drawings need air around them.
           Column {
             visible: !root.setupOpen
             width: parent.width
-            spacing: root.sectionGap
+            spacing: Style.space(20)
 
             Notice {
               visible: root.needsAccess
@@ -345,229 +449,285 @@ Panel {
               onDismissed: root.updater.dismiss()
             }
 
+            // Type measured once, so drawings can line up with text: from the
+            // cap height of a first line to the baseline of a last.
+            FontMetrics { id: statusType; font.family: root.fontFamily; font.pixelSize: Style.font.subtitle }
+            FontMetrics { id: nameType; font.family: root.fontFamily; font.pixelSize: Style.font.subtitle }
+            FontMetrics { id: smallType; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+            FontMetrics { id: budType; font.family: root.fontFamily; font.pixelSize: root.budNumberSize; font.bold: true }
+
             // ------------------------------------------------------ laptop
-            SectionHeader {
-              visible: !!root.laptop
-              icon: "device-laptop"
-              title: root.laptop && root.laptop.batteries.length > 1 ? "LAPTOP · " + root.laptop.batteries.join(" + ") : "LAPTOP"
-              detail: Model.laptopStatus(root.laptop).toUpperCase()
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            // The level, big, with what the pack holds on the right.
-            Column {
+            // The laptop drawn as tall as what it is doing and its readings
+            // beside it, with its level on the screen.
+            Item {
               visible: !!root.laptop
               width: parent.width
-              spacing: Style.space(8)
+              height: laptopInfo.implicitHeight
 
+              // As tall as the readings, from the status's cap height to the
+              // last row's baseline, in the drawing's own proportions
+              // (Glyphs.js). The readings have a fixed width, so the drawing
+              // can size from their height without a loop; past the room
+              // left it shrinks and centres.
               Item {
-                width: parent.width
-                height: bigLevel.implicitHeight
+                id: laptopArt
+                readonly property real span: laptopInfo.implicitHeight - root.capInset(statusType) - smallType.descent
+                readonly property real room: parent.width - laptopInfo.width - Style.space(20) - x
+                x: Style.space(2)
+                width: Math.min(room, Math.round(span * 44 / 27.4))
+                height: Math.round(width * 27.4 / 44)
+                y: root.capInset(statusType) + (span - height) / 2
 
-                Row {
-                  id: bigLevel
-                  anchors.left: parent.left
-                  anchors.leftMargin: Style.space(4)
-                  spacing: Style.space(6)
+                // Pulses while plugged in, full or not, so a connected
+                // charger always shows.
+                ChargeGlyph {
+                  id: laptopGlyph
+                  anchors.fill: parent
+                  charging: !!root.laptop && (root.laptop.acOnline || root.laptop.charging)
+                  glyph: Component { DeviceGlyph { name: "laptop"; color: root.foreground } }
+                }
 
-                  Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    textFormat: Text.PlainText
-                    text: root.laptop ? Model.percent(root.laptop.level) : "--"
-                    color: root.laptop ? root.levelColor(root.laptop) : root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.display
-                    font.bold: true
+                // On the display, which is centred at 0.41 of the drawing's
+                // height and is 0.69 of it tall.
+                Reading {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  y: Math.round(laptopArt.height * 0.41 - height / 2)
+                  level: root.laptop ? root.laptop.level : null
+                  size: Math.round(laptopArt.height * 0.3)
+                  color: root.laptop ? root.levelColor(root.laptop) : root.dim
+                }
+              }
+
+              Column {
+                id: laptopInfo
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(2)
+                width: Style.space(156)
+                spacing: Style.space(4)
+
+                Text {
+                  width: parent.width
+                  bottomPadding: Style.space(4)
+                  textFormat: Text.PlainText
+                  wrapMode: Text.WordWrap
+                  text: Model.statusLines(Model.laptopStatus(root.laptop))
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.subtitle
+                }
+
+                // Label on the left, reading on the right: power, health,
+                // the limit, energy and the average drain.
+                Repeater {
+                  model: Model.laptopFacts(root.laptop, root.drain)
+
+                  Item {
+                    required property var modelData
+                    width: laptopInfo.width
+                    height: Math.max(factLabel.implicitHeight, factValue.implicitHeight)
+
+                    Text {
+                      id: factLabel
+                      textFormat: Text.PlainText
+                      text: modelData.label
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+
+                    Text {
+                      id: factValue
+                      anchors.right: parent.right
+                      width: Math.min(implicitWidth, parent.width - factLabel.implicitWidth - Style.space(10))
+                      horizontalAlignment: Text.AlignRight
+                      wrapMode: Text.WordWrap
+                      textFormat: Text.PlainText
+                      text: modelData.value
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                      font.bold: true
+                    }
                   }
-
-                  BoltIcon {
-                    visible: !!root.laptop && root.laptop.charging
-                    anchors.verticalCenter: parent.verticalCenter
-                    implicitHeight: Style.font.heading
-                    color: root.accent
-                  }
                 }
-
-                Caption {
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
-                  anchors.right: parent.right
-                  anchors.rightMargin: Style.space(4)
-                  anchors.bottom: parent.bottom
-                  anchors.bottomMargin: Style.space(4)
-                  text: Model.laptopEnergy(root.laptop)
-                }
-              }
-
-              LevelBar {
-                width: parent.width
-                level: root.laptop && Model.hasLevel(root.laptop.level) ? root.laptop.level : 0
-                fill: root.laptop && root.laptop.charging ? root.accent : (root.laptop ? root.levelColor(root.laptop) : root.foreground)
-                marker: root.laptop && root.laptop.chargeLimit ? root.laptop.chargeLimit : 0
-                markerColor: root.dim
-              }
-            }
-
-            Grid {
-              id: laptopTiles
-              visible: !!root.laptop
-              width: parent.width
-              columns: 3
-              columnSpacing: root.tileGap
-              rowSpacing: root.tileGap
-
-              readonly property real tileWidth: (width - columnSpacing * (columns - 1)) / columns
-
-              Repeater {
-                model: Model.laptopTiles(root.laptop)
-
-                StatTile {
-                  required property var modelData
-                  width: laptopTiles.tileWidth
-                  icon: modelData.icon
-                  caption: modelData.caption
-                  value: modelData.value
-                  note: modelData.note
-                  foreground: root.foreground
-                  accent: root.accent
-                  fontFamily: root.fontFamily
-                }
-              }
-            }
-
-            // ----------------------------------------------------- history
-            PanelSeparator { visible: root.hasHistory; foreground: root.foreground }
-
-            SectionHeader {
-              visible: root.hasHistory
-              icon: "chart-line"
-              title: "LAST " + root.historyHours + " HOURS"
-              detail: Model.drainText(root.drain).toUpperCase()
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Column {
-              visible: root.hasHistory
-              width: parent.width
-              spacing: Style.space(4)
-
-              HistoryGraph {
-                width: parent.width
-                samples: root.history
-                hours: root.historyHours
-                foreground: root.foreground
-                accent: root.accent
-              }
-
-              Item {
-                width: parent.width
-                height: axisStart.implicitHeight
-
-                Caption { id: axisStart; foreground: root.foreground; fontFamily: root.fontFamily; anchors.left: parent.left; text: root.historyHours + "h ago" }
-                Caption { foreground: root.foreground; fontFamily: root.fontFamily; anchors.horizontalCenter: parent.horizontalCenter; text: root.historyHours / 2 + "h" }
-                Caption { foreground: root.foreground; fontFamily: root.fontFamily; anchors.right: parent.right; text: "now" }
               }
             }
 
             // ----------------------------------------------------- AirPods
             PanelSeparator { visible: !!root.airpods && !!root.laptop; foreground: root.foreground }
 
-            SectionHeader {
+            Column {
               visible: !!root.airpods
-              icon: "device-airpods"
-              title: root.airpods ? root.airpods.name.toUpperCase() : ""
-              detail: Model.airpodsStatus(root.airpods).toUpperCase()
-              detailColor: root.airpods && root.airpods.connected ? Qt.darker(root.foreground, 1.15) : root.dim
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Grid {
-              id: podTiles
-              visible: !!root.airpods && root.airpods.known
               width: parent.width
-              columns: Math.max(1, Model.airpodsTiles(root.airpods).length)
-              columnSpacing: root.tileGap
+              spacing: Style.space(18)
 
-              readonly property real tileWidth: (width - columnSpacing * (columns - 1)) / columns
+              Item {
+                width: parent.width
+                height: Math.max(podName.implicitHeight, podStatus.implicitHeight)
 
-              Repeater {
-                model: Model.airpodsTiles(root.airpods)
-
-                StatTile {
-                  required property var modelData
-                  readonly property bool stale: !!root.airpods && root.airpods.stale
-                  width: podTiles.tileWidth
-                  icon: modelData.icon
-                  iconColor: modelData.charging ? root.accent : root.foreground
-                  caption: modelData.caption
-                  value: modelData.value
-                  valueColor: modelData.pod && !stale ? root.levelColor(modelData.pod) : root.dim
-                  showLevel: true
-                  level: modelData.level
-                  levelColor: modelData.charging ? root.accent : (stale ? root.dim : root.foreground)
-                  foreground: root.foreground
-                  accent: root.accent
-                  fontFamily: root.fontFamily
+                Text {
+                  id: podName
+                  x: Style.space(2)
+                  textFormat: Text.PlainText
+                  text: root.airpods ? root.airpods.name : ""
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  font.bold: true
                 }
+
+                Text {
+                  id: podStatus
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.space(2)
+                  anchors.baseline: podName.baseline
+                  width: parent.width - podName.implicitWidth - Style.space(20)
+                  horizontalAlignment: Text.AlignRight
+                  wrapMode: Text.WordWrap
+                  textFormat: Text.PlainText
+                  text: Model.airpodsStatus(root.airpods)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
+
+              // The buds face each other, each with its level on its own
+              // side, drawn as tall as the reading beside it.
+              Row {
+                id: budRow
+                readonly property var parts: Model.airpodsParts(root.airpods)
+                readonly property bool stale: !!root.airpods && root.airpods.stale
+                readonly property real inkTop: root.capInset(budType)
+                readonly property real inkHeight: leftReading.height - inkTop - smallType.descent
+                visible: !!root.airpods && root.airpods.known && !root.airpods.isHeadset
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Style.space(18)
+
+                BudReading {
+                  id: leftReading
+                  alignRight: true
+                  pod: budRow.parts.length > 0 ? budRow.parts[0].pod : null
+                  label: "Left"
+                  stale: budRow.stale
+                }
+
+                Row {
+                  y: budRow.inkTop
+                  spacing: Style.space(12)
+
+                  Repeater {
+                    model: 2
+
+                    ChargeGlyph {
+                      id: bud
+                      required property int index
+                      readonly property var pod: budRow.parts.length > index ? budRow.parts[index].pod : null
+                      height: budRow.inkHeight
+                      // One bud's ink is about 0.73 of its height.
+                      width: Math.ceil(height * 0.74)
+                      charging: !!pod && pod.charging === true
+                      opacity: budRow.stale ? 0.6 : 1
+                      glyph: Component {
+                        BudArt { rightBud: bud.index === 1; variant: Model.airpodsVariant(root.airpods) }
+                      }
+                    }
+                  }
+                }
+
+                BudReading {
+                  pod: budRow.parts.length > 1 ? budRow.parts[1].pod : null
+                  label: "Right"
+                  stale: budRow.stale
+                }
+              }
+
+              // The case, quieter, under the buds.
+              Row {
+                readonly property var pod: root.airpods ? root.airpods["case"] : null
+                visible: !!root.airpods && root.airpods.known && !root.airpods.isHeadset
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Style.space(8)
+
+                ChargeGlyph {
+                  anchors.verticalCenter: parent.verticalCenter
+                  height: Style.space(16)
+                  width: Math.round(height * 40 / 30)
+                  charging: !!parent.pod && parent.pod.charging === true
+                  glyph: Component { DeviceGlyph { name: "airpods-case"; color: root.foreground } }
+                }
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: parent.pod && parent.pod.charging ? "Case charging" : "Case"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                Reading {
+                  anchors.verticalCenter: parent.verticalCenter
+                  level: parent.pod ? parent.pod.level : null
+                  size: Style.font.subtitle
+                  color: parent.pod ? root.levelColor(parent.pod) : root.dim
+                }
+              }
+
+              // AirPods Max: one drawing as tall as the reading.
+              Row {
+                id: headsetRow
+                readonly property var pod: root.airpods ? root.airpods.headset : null
+                visible: !!root.airpods && root.airpods.known && root.airpods.isHeadset
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Style.space(18)
+
+                ChargeGlyph {
+                  y: root.capInset(budType)
+                  height: headsetReading.height - y - smallType.descent
+                  width: height
+                  charging: !!headsetRow.pod && headsetRow.pod.charging === true
+                  glyph: Component { AirPodsIcon { iconSize: height; variant: "max"; color: root.foreground } }
+                }
+
+                BudReading {
+                  id: headsetReading
+                  pod: headsetRow.pod
+                  label: root.airpods && root.airpods.model ? root.airpods.model : "AirPods Max"
+                  stale: !!root.airpods && root.airpods.stale
+                }
+              }
+
+              Caption {
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                visible: !!root.airpods && !root.airpods.known
+                width: parent.width
+                leftPadding: Style.space(2)
+                wrapMode: Text.WordWrap
+                text: (root.airpods && root.airpods.model ? root.airpods.model + ". " : "") + "Waiting for each bud and the case…"
               }
             }
 
-            Caption {
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              visible: !!root.airpods && !root.airpods.known
-              width: parent.width
-              leftPadding: Style.space(8)
-              wrapMode: Text.WordWrap
-              text: (root.airpods && root.airpods.model ? root.airpods.model + ". " : "") + "Waiting for each bud and the case…"
-            }
-
-            // --------------------------------------------------------- JBL
+            // ------------------------------------------------ JBL, devices
             PanelSeparator {
-              visible: (!!root.laptop || !!root.airpods) && root.speakers.length > 0
+              visible: (!!root.laptop || !!root.airpods) && root.speakers.length + root.others.length > 0
               foreground: root.foreground
-            }
-
-            SectionHeader {
-              visible: root.speakers.length > 0
-              icon: "jbl"
-              title: "SPEAKERS"
-              detail: Model.jblStatus(root.speakers).toUpperCase()
-              foreground: root.foreground
-              fontFamily: root.fontFamily
             }
 
             Column {
-              visible: root.speakers.length > 0
+              visible: root.speakers.length + root.others.length > 0
               width: parent.width
-              spacing: Style.space(14)
+              spacing: Style.space(20)
 
               Repeater {
-                model: root.speakers
+                model: root.speakers.concat(root.others)
 
                 DeviceRow {
                   required property var modelData
                   device: modelData
                 }
               }
-            }
-
-            // ----------------------------------------------------- devices
-            PanelSeparator {
-              visible: (!!root.laptop || !!root.airpods || root.speakers.length > 0) && root.others.length > 0
-              foreground: root.foreground
-            }
-
-            SectionHeader {
-              visible: root.others.length > 0 || root.devices.length === 0 && !root.laptop && !root.airpods
-              icon: "devices"
-              title: "DEVICES"
-              detail: root.others.length > 0 ? root.others.length + " FOUND" : ""
-              foreground: root.foreground
-              fontFamily: root.fontFamily
             }
 
             Caption {
@@ -575,28 +735,14 @@ Panel {
               fontFamily: root.fontFamily
               visible: root.devices.length === 0 && !root.laptop && !root.airpods
               width: parent.width
-              leftPadding: Style.space(8)
+              leftPadding: Style.space(2)
               wrapMode: Text.WordWrap
               text: root.client && root.client.loaded
                 ? "Nothing found yet. Wireless mice, keyboards, headsets, controllers and phones show up here."
                 : "Looking for batteries…"
             }
-
-            Column {
-              visible: root.others.length > 0
-              width: parent.width
-              spacing: Style.space(14)
-
-              Repeater {
-                model: root.others
-
-                DeviceRow {
-                  required property var modelData
-                  device: modelData
-                }
-              }
-            }
           }
+
 
           // ========================================================= settings
           Column {
