@@ -4,7 +4,7 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.5.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.5.1-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
@@ -16,7 +16,7 @@
 
 ## Features
 
-- **The bar shows what you pick:** laptop level, its charge or discharge rate in watts, time left or to full, AirPods (the emptier bud) and their case, any peripheral one toggle each, percentages on or off. While something charges, its icon dims and bright bands rise through it, like charge flowing in.
+- **The bar shows what you pick:** laptop level, its charge or discharge rate in watts, time left or to full, AirPods (the emptier bud) and their case, any peripheral one toggle each, percentages on or off. While something is on a charger, its icon dims and bright bands rise through it, like charge flowing in. It keeps going when the battery is full or held at a limit, so you can see the charger is connected.
 - **Laptop:** level with the charge limit marked, the rate, energy in Wh, health against the design capacity, cycles, charge limit and power source.
 - **Charge history:** the last 12 hours as a graph, plugged-in stretches in the accent colour, and your average drain on battery (time spent plugged in, even held at a charge limit, never counts as drain). It is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
 - **AirPods:** each bud and the case with level, charging and in-ear state, or an AirPods Max's single battery. Like any other device, they leave the panel when they disconnect; the bar tooltip keeps their last seen levels.

@@ -11,7 +11,7 @@ How Batteries is put together, for anyone (or any agent) changing it. The user-f
 - `WidgetSettings.qml`: this widget's `shell.json` entry, read from the file (see below).
 - `Model.js`: parsing, the bar items, the history and alert rules. Tested by `tests/model.test.js`.
 - `bin/batteries`: the reader (Python, stdlib only): sysfs, UPower, librepods, HID for Glorious and HyperX, JBL's GATT service, openrazer, HeadsetControl, libimobiledevice, KDE Connect. Tested by `tests/test_batteries.py`.
-- `Icon.qml`, `Icons.js`, `BoltIcon.qml`, `AirPodsIcon.qml`: drawn icons; `BarIcon.qml` is a bar item's icon, with bands rising through it while it charges; `scripts/fetch-icons.py` regenerates `Icons.js` from Tabler. `Marks.js` is not generated: the JBL lettering as a filled mark on the same grid, drawn in the theme's colour.
+- `Icon.qml`, `Icons.js`, `BoltIcon.qml`, `AirPodsIcon.qml`: drawn icons; `BarIcon.qml` is a bar item's icon, with bands rising through it while it is on a charger, full or not; `scripts/fetch-icons.py` regenerates `Icons.js` from Tabler. `Marks.js` is not generated: the JBL lettering as a filled mark on the same grid, drawn in the theme's colour.
 - `udev/70-omarchy-batteries.rules`: HID access for the logged-in user.
 
 ## Test

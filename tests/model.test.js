@@ -182,8 +182,15 @@ assert.strictEqual(quiet.find(i => i.key === "laptop-rate").text, "12 W")
 assert.ok(!Model.barItems(Object.assign({}, state, { airpods: podsKept }), opts).some(i => i.key === "airpods"))
 assert.strictEqual(Model.barItems(state, opts).find(i => i.key === "laptop").icon, "device-laptop")
 assert.strictEqual(Model.barItems(state, opts).find(i => i.key === "airpods").icon, "airpods")
-// Charging laptop carries the bolt; a low mouse goes urgent.
-assert.strictEqual(Model.barItems(Object.assign({}, state, { laptop: charging }), opts).find(i => i.key === "laptop").charging, true)
+// The wave shows while on a charger, charging or not; a low mouse goes urgent.
+const barLaptop = lap => Model.barItems(Object.assign({}, state, { laptop: lap }), opts).find(i => i.key === "laptop")
+assert.strictEqual(barLaptop(charging).powered, true)
+assert.strictEqual(barLaptop(Object.assign({}, onBattery, { status: "held", acOnline: true })).powered, true)
+assert.strictEqual(barLaptop(Object.assign({}, onBattery, { status: "full", level: 100, acOnline: true })).powered, true)
+assert.strictEqual(barLaptop(onBattery).powered, false)
+const fullOnCable = Object.assign({}, cabled, { level: 100, charging: false, powered: true, status: "full" })
+assert.strictEqual(Model.barItems(Object.assign({}, state, { devices: [fullOnCable] }), opts)[0].powered, true)
+assert.strictEqual(Model.barItems(state, opts)[0].powered, false)
 assert.strictEqual(Model.barItems(Object.assign({}, state, { devices: [Object.assign({}, mouse, { level: 9 })] }), opts)[0].tone, "low")
 // Toggling from auto starts from the mice auto showed.
 assert.deepStrictEqual(Model.toggleBarDevice(null, kb.id, [mouse, kb]), [mouse.id, kb.id])

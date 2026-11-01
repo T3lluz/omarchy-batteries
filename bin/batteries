@@ -201,6 +201,7 @@ def glorious_wireless(nodes: list[dict], denied: list[str]) -> list[dict]:
             if got and got["state"] == "active":
                 dev["level"] = got["level"]
                 dev["charging"] = got["level"] < 100
+                dev["powered"] = True
                 dev["status"] = "charging" if dev["charging"] else "full"
                 dev["connection"] = "usb"
             elif dongle:
@@ -212,6 +213,7 @@ def glorious_wireless(nodes: list[dict], denied: list[str]) -> list[dict]:
             elif cable:
                 dev["status"] = "charging"
                 dev["charging"] = True
+                dev["powered"] = True
         except NoAccess as e:
             denied.append(str(e))
             dev["status"] = "no-access"
@@ -531,6 +533,8 @@ def parse_upower_dump(text: str) -> list[dict]:
             "source": "upower",
             "level": level,
             "charging": state == "charging",
+            # UPower only reports fully-charged while the device is on power.
+            "powered": state in ("charging", "full"),
             "status": state if level is not None else "unknown",
             "connection": connection,
         })
@@ -771,6 +775,7 @@ def iphone() -> list[dict]:
         if not level.isdigit():
             continue
         charging = batt.get("BatteryIsCharging") == "true"
+        powered = charging or batt.get("ExternalConnected") == "true"
         cls = info.get("DeviceClass", "iPhone")
         out.append({
             "id": "iphone:" + udid,
@@ -779,6 +784,7 @@ def iphone() -> list[dict]:
             "source": "iphone",
             "level": int(level),
             "charging": charging,
+            "powered": powered,
             "status": "charging" if charging else ("full" if level == "100" else "discharging"),
             "connection": "usb",
         })
@@ -904,6 +910,11 @@ def probe() -> dict:
         iphone(),
         kdeconnect(),
     ]
+    # On a charger, charging or not. Sources that only report charging stop
+    # counting as powered once they are full.
+    for group in groups:
+        for dev in group:
+            dev.setdefault("powered", dev["charging"])
     return {
         "laptop": laptop(parse_upower_battery_times(dump)),
         # BlueZ also reports connected AirPods as one headset level; the

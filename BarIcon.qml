@@ -1,9 +1,10 @@
 import QtQuick
 import QtQuick.Effects
 
-// A bar item's device icon. While it charges, the icon dims and soft bright
-// bands rise through it, one after another, like charge flowing in from the
-// cable. Charging shows on the device itself rather than as an extra glyph.
+// A bar item's device icon. While it is on a charger, the icon dims and soft
+// bright bands rise through it, one after another, like charge flowing in
+// from the cable. That includes full or held at a limit, so a connected
+// charger always shows, on the device itself rather than as an extra glyph.
 Item {
   id: root
   // A name from Icons.js, or "airpods" for the drawn AirPods outline.
@@ -11,7 +12,7 @@ Item {
   property string variant: "buds"
   property real size: 16
   property color color: "white"
-  property bool charging: false
+  property bool powered: false
   // 0 to 1: how far the bands have risen through one icon height.
   property real flow: 0
 
@@ -20,10 +21,10 @@ Item {
 
   Item {
     anchors.fill: parent
-    opacity: root.charging ? 0.5 : 1
+    opacity: root.powered ? 0.5 : 1
     // Flattened first, or the strokes' overlaps at the corners show brighter
     // than the rest once the icon dims.
-    layer.enabled: root.charging
+    layer.enabled: root.powered
     layer.smooth: true
 
     Glyph { name: root.name; variant: root.variant; size: root.size; color: root.color }
@@ -46,7 +47,7 @@ Item {
     visible: false
     sourceItem: bright
     hideSource: true
-    live: root.charging
+    live: root.powered
     smooth: true
   }
 
@@ -84,12 +85,12 @@ Item {
     visible: false
     sourceItem: mask
     hideSource: true
-    live: root.charging
+    live: root.powered
     smooth: true
   }
 
   MultiEffect {
-    visible: root.charging
+    visible: root.powered
     anchors.fill: parent
     source: brightTexture
     maskEnabled: true
@@ -127,7 +128,7 @@ Item {
 
   // Unrounded, so the bands move every frame at the screen's refresh rate.
   NumberAnimation on flow {
-    running: root.charging && root.visible
+    running: root.powered && root.visible
     from: 0
     to: 1
     duration: 2400

@@ -348,7 +348,7 @@ function barPicks(state) {
   var picks = []
   var lap = state ? state.laptop : null
   if (lap) {
-    picks.push({ key: "barLaptop", icon: "device-laptop", label: "Laptop", hint: "Its level; charge flows up through the icon while it charges", fallback: true })
+    picks.push({ key: "barLaptop", icon: "device-laptop", label: "Laptop", hint: "Its level; charge flows up through the icon while plugged in", fallback: true })
     picks.push({ key: "barLaptopRate", icon: "bolt", label: "Laptop power", hint: "Watts going in or out", fallback: false })
     picks.push({ key: "barLaptopTime", icon: "clock-hour-4", label: "Laptop time", hint: "Time left, or time to full while charging", fallback: false })
   }
@@ -380,7 +380,7 @@ function barItems(state, opts) {
       key: d.id,
       icon: kindIcon(d.kind),
       text: opts.percent ? (hasLevel(d.level) ? percent(d.level) : (d.status === "asleep" ? "zZ" : "--")) : "",
-      charging: d.charging,
+      powered: !!(d.powered || d.charging),
       tone: d.status === "no-access" ? "low" : isLow(d, t) && !d.stale ? "low" : (d.stale || !hasLevel(d.level)) ? "dim" : "normal"
     })
   }
@@ -393,7 +393,7 @@ function barItems(state, opts) {
         key: "airpods",
         icon: "airpods",
         text: opts.percent ? percent(pods.level) : "",
-        charging: pods.charging,
+        powered: !!pods.charging,
         tone: isLow(pods, t) ? "low" : "normal"
       })
     }
@@ -402,7 +402,7 @@ function barItems(state, opts) {
         key: "airpods-case",
         icon: "device-airpods-case",
         text: opts.percent ? percent(pods["case"].level) : "",
-        charging: pods["case"].charging,
+        powered: !!pods["case"].charging,
         tone: "normal"
       })
     }
@@ -415,15 +415,17 @@ function barItems(state, opts) {
         key: "laptop",
         icon: "device-laptop",
         text: opts.percent ? percent(lap.level) : "",
-        charging: lap.charging,
+        // Full or held at a charge limit still shows, so the charger is
+        // visibly connected.
+        powered: !!(lap.acOnline || lap.charging),
         tone: isLow(lap, t) ? "low" : "normal"
       })
     }
     if (opts.laptopRate && lap.rateW > 0) {
-      items.push({ key: "laptop-rate", icon: lap.charging ? "plug-connected" : "bolt", text: watts(lap.rateW), charging: false, tone: "normal" })
+      items.push({ key: "laptop-rate", icon: lap.charging ? "plug-connected" : "bolt", text: watts(lap.rateW), powered: false, tone: "normal" })
     }
     if (opts.laptopTime && (lap.timeToEmpty || lap.timeToFull)) {
-      items.push({ key: "laptop-time", icon: "clock-hour-4", text: duration(lap.timeToEmpty || lap.timeToFull), charging: false, tone: "normal" })
+      items.push({ key: "laptop-time", icon: "clock-hour-4", text: duration(lap.timeToEmpty || lap.timeToFull), powered: false, tone: "normal" })
     }
   }
   return items

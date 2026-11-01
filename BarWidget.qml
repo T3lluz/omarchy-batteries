@@ -6,7 +6,7 @@ import qs.Ui
 import "Model.js" as Model
 
 // Bar entry: the batteries picked in settings, each as an icon and level,
-// bands rising through the icon while it charges. The bar draws this widget once per monitor;
+// bands rising through the icon while it is on a charger. The bar draws this widget once per monitor;
 // the first instance owns the poller and the others read from it.
 BarWidget {
   id: root
@@ -224,7 +224,7 @@ BarWidget {
             size: Style.bar.iconFont
             color: root.toneColor(modelData.tone)
             variant: Model.airpodsVariant(root.batteryState.airpods)
-            charging: modelData.charging
+            powered: modelData.powered
           }
 
           Text {

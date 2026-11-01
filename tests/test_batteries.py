@@ -130,7 +130,7 @@ class GloriousSelectionTest(unittest.TestCase):
     def test_cable_full(self):
         self.replies = {"/dev/c2": mow_reply(0xA1, 100)}
         [dev] = pb.glorious_wireless(self.nodes(dongle=False), [])
-        self.assertEqual((dev["charging"], dev["status"]), (False, "full"))
+        self.assertEqual((dev["charging"], dev["powered"], dev["status"]), (False, True, "full"))
 
     def test_dongle_on_battery(self):
         self.replies = {"/dev/d2": mow_reply(0xA1, 64)}
@@ -166,6 +166,11 @@ class UPowerTest(unittest.TestCase):
         mouse, headset = devs
         self.assertEqual((mouse["kind"], mouse["level"], mouse["status"], mouse["connection"]), ("mouse", 55, "discharging", "wireless"))
         self.assertEqual((headset["kind"], headset["level"], headset["charging"], headset["connection"]), ("headset", 40, True, "bluetooth"))
+        self.assertEqual((mouse["powered"], headset["powered"]), (False, True))
+
+    def test_fully_charged_is_on_power(self):
+        [dev] = pb.parse_upower_dump(UPOWER_DUMP.replace("pending-charge", "fully-charged"))[1:]
+        self.assertEqual((dev["charging"], dev["powered"], dev["status"]), (False, True, "full"))
 
 
 class OtherParsersTest(unittest.TestCase):
