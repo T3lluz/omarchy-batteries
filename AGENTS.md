@@ -6,13 +6,13 @@ How Batteries is put together, for anyone (or any agent) changing it. The user-f
 
 - `BarWidget.qml`: the bar entry, once per monitor. The first instance (the leader) loads `BatteryClient.qml`; the others read the leader's. Hosts `Panel.qml` and the IPC target.
 - `BatteryClient.qml`: polls `bin/batteries probe`, listens to udev and librepods, keeps last-seen levels, the laptop's charge history and low-battery notifications.
-- `Panel.qml`: the panel. Each device is drawn big with its readings beside it, lined up with the text: a drawing spans from the cap height of the first line next to it to the baseline of the last (the `FontMetrics` in the panel measure that). `ChargeGlyph.qml` makes any drawing pulse while it charges.
+- `Panel.qml`: the panel. Each device is drawn big with its readings beside it, lined up with the text: a drawing spans from the cap height of the first line next to it to the baseline of the last (the `FontMetrics` in the panel measure that). `ChargeGlyph.qml` makes any drawing pulse while it charges, and stops while the panel is closed.
 - The panel kit (below) and the shared updater (`Updater.qml`, `Update.js`, `bin/plugin-update`).
 - `WidgetSettings.qml`: this widget's `shell.json` entry, read from the file (see below).
 - `Model.js`: parsing, the bar items, the history and alert rules. Tested by `tests/model.test.js`.
 - `bin/batteries`: the reader (Python, stdlib only): sysfs, UPower, librepods, HID for Glorious and HyperX, JBL's GATT service, openrazer, HeadsetControl, libimobiledevice, KDE Connect. Tested by `tests/test_batteries.py`.
 - `DeviceGlyph.qml`, `Glyphs.js`: the panel's device drawings, solid with fine details cut out to match the AirPods drawing. `scripts/draw-glyphs.py` builds them from plain shapes and regenerates `Glyphs.js`; add a kind there and in `KIND_GLYPHS` in `Model.js`. Kinds without one fall back to Tabler's filled icon.
-- `Icon.qml`, `Icons.js`, `AirPodsIcon.qml`: drawn icons; `BarIcon.qml` is a bar item's icon, with bands rising through it while it is on a charger, full or not; `scripts/fetch-icons.py` regenerates `Icons.js` from Tabler. `Marks.js` is not generated: the JBL lettering as a filled mark on the same grid, drawn in the theme's colour.
+- `Icon.qml`, `Icons.js`, `AirPodsIcon.qml`: drawn icons; `BarIcon.qml` is a bar item's icon, with a band rising through it while it is on a charger, full or not. Every step repaints the whole bar on every monitor, so keep the steps few (`Model.chargeStep`); `scripts/fetch-icons.py` regenerates `Icons.js` from Tabler. `Marks.js` is not generated: the JBL lettering as a filled mark on the same grid, drawn in the theme's colour.
 - `udev/70-omarchy-batteries.rules`: HID access for the logged-in user.
 
 ## Test

@@ -1,10 +1,11 @@
 import QtQuick
 import QtQuick.Effects
+import "Model.js" as Model
 
-// A bar item's device icon. While it is on a charger, the icon dims and soft
-// bright bands rise through it, one after another, like charge flowing in
-// from the cable. That includes full or held at a limit, so a connected
-// charger always shows, on the device itself rather than as an extra glyph.
+// A bar item's device icon. While it is on a charger, the icon dims and a soft
+// bright band rises through it every few seconds, like charge flowing in from
+// the cable. That includes full or held at a limit, so a connected charger
+// always shows, on the device itself rather than as an extra glyph.
 Item {
   id: root
   // A name from Icons.js, or "airpods" for the drawn AirPods outline.
@@ -13,7 +14,7 @@ Item {
   property real size: 16
   property color color: "white"
   property bool powered: false
-  // 0 to 1: how far the bands have risen through one icon height.
+  // 0 to 1: how far the band has risen, from below the icon to above it.
   property real flow: 0
 
   implicitWidth: size
@@ -51,10 +52,8 @@ Item {
     smooth: true
   }
 
-  // Two soft bands one icon height apart, on a strip twice the icon's height
-  // that slides up by exactly one height per cycle, so the loop has no seam.
-  // A gradient rather than a clip: a clip cuts on whole pixels and steps,
-  // the gradient moves by fractions of one.
+  // A gradient rather than a clip: a clip cuts on whole pixels and steps, the
+  // gradient moves by fractions of one, and its soft edges hide the steps.
   Item {
     id: mask
     width: root.size
@@ -62,19 +61,13 @@ Item {
     clip: true
 
     Rectangle {
-      y: -root.size * root.flow
+      readonly property real travel: root.size + height
+      y: root.size - travel * root.flow
       width: parent.width
-      height: root.size * 2
+      height: root.size
       gradient: Gradient {
         GradientStop { position: 0.0; color: "transparent" }
-        GradientStop { position: 0.05; color: "transparent" }
-        GradientStop { position: 0.2; color: "white" }
-        GradientStop { position: 0.3; color: "white" }
-        GradientStop { position: 0.45; color: "transparent" }
-        GradientStop { position: 0.55; color: "transparent" }
-        GradientStop { position: 0.7; color: "white" }
-        GradientStop { position: 0.8; color: "white" }
-        GradientStop { position: 0.95; color: "transparent" }
+        GradientStop { position: 0.5; color: "white" }
         GradientStop { position: 1.0; color: "transparent" }
       }
     }
@@ -126,12 +119,17 @@ Item {
     }
   }
 
-  // Unrounded, so the bands move every frame at the screen's refresh rate.
-  NumberAnimation on flow {
+  // Each step repaints the whole bar on every monitor, so the band moves about
+  // once per screen pixel (12.5 steps a second) and not at all between sweeps.
+  // See Model.chargeStep.
+  Timer {
+    repeat: true
+    triggeredOnStart: true
     running: root.powered && root.visible
-    from: 0
-    to: 1
-    duration: 2400
-    loops: Animation.Infinite
+    onTriggered: {
+      const step = Model.chargeStep(Date.now(), 80)
+      root.flow = step.flow
+      interval = step.wait
+    }
   }
 }

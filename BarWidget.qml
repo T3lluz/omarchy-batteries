@@ -6,7 +6,7 @@ import qs.Ui
 import "Model.js" as Model
 
 // Bar entry: the batteries picked in settings, each as an icon and level,
-// bands rising through the icon while it is on a charger. The bar draws this widget once per monitor;
+// a band rising through the icon while it is on a charger. The bar draws this widget once per monitor;
 // the first instance owns the poller and the others read from it.
 BarWidget {
   id: root

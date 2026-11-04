@@ -1,8 +1,9 @@
 import QtQuick
 import QtQuick.Effects
+import "Model.js" as Model
 
-// A device drawn in the panel. While it charges it dims and soft bands rise
-// through it, the way the bar's icons show charging.
+// A device drawn in the panel. While it charges it dims and a soft band rises
+// through it every few seconds, the way the bar's icons show charging.
 Item {
   id: root
 
@@ -44,8 +45,7 @@ Item {
       color: Qt.rgba(1, 1, 1, 0.5)
     }
 
-    // Rises from below the drawing to above it, one band per cycle, moved
-    // by fractions of a pixel so it glides at the screen's rate.
+    // Rises from below the drawing to above it, one band per cycle.
     Rectangle {
       readonly property real travel: root.height + height
       y: root.height - travel * root.flow
@@ -79,11 +79,17 @@ Item {
     maskSpreadAtMin: 1
   }
 
-  NumberAnimation on flow {
-    running: root.charging && root.visible
-    from: 0
-    to: 1
-    duration: 2400
-    loops: Animation.Infinite
+  // Faster steps than the bar's, because the drawing is bigger and the panel is
+  // only open for a moment. See Model.chargeStep. A closed panel's window is
+  // hidden while this item still counts as visible, so check the window too.
+  Timer {
+    repeat: true
+    triggeredOnStart: true
+    running: root.charging && root.visible && root.Window.visibility !== Window.Hidden
+    onTriggered: {
+      const step = Model.chargeStep(Date.now(), 50)
+      root.flow = step.flow
+      interval = step.wait
+    }
   }
 }

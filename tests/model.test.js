@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindGlyph, deviceTitle, jblTitle, jblSpeakers, otherDevices, jblStatus, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, statusLines, summary, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip }")()
+const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindGlyph, deviceTitle, jblTitle, jblSpeakers, otherDevices, jblStatus, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, statusLines, summary, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -252,6 +252,26 @@ assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
   assert.strictEqual(Model.drainRate(10.4), "10%/h")
   assert.strictEqual(Model.drainRate(4.26), "4.3%/h")
   assert.strictEqual(Model.historySince(run, 4800, 0.5).length, 4)
+}
+
+// The charging band sweeps in steps on the clock, then waits out the rest in one go.
+{
+  assert.deepStrictEqual(Model.chargeStep(0, 80), { flow: 0, wait: 80 })
+  assert.deepStrictEqual(Model.chargeStep(100, 80), { flow: 0.04, wait: 60 })
+  assert.deepStrictEqual(Model.chargeStep(4100, 80), Model.chargeStep(100, 80))
+  assert.deepStrictEqual(Model.chargeStep(2000, 80), { flow: 1, wait: 2000 })
+  assert.deepStrictEqual(Model.chargeStep(3999, 80), { flow: 1, wait: 1 })
+  // Walking the waits lands on every step once and never stalls.
+  let now = 0, moves = 0, last = -1
+  while (now < 4000) {
+    const step = Model.chargeStep(now, 80)
+    assert.ok(step.wait >= 1)
+    assert.ok(step.flow > last)
+    last = step.flow
+    moves++
+    now += step.wait
+  }
+  assert.strictEqual(moves, 26)
 }
 
 console.log("model tests passed")

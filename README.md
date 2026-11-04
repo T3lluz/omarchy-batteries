@@ -4,7 +4,7 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.6.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.6.1-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
@@ -16,7 +16,7 @@
 
 ## Features
 
-- **The bar shows what you pick:** laptop level, its charge or discharge rate in watts, time left or to full, AirPods (the emptier bud) and their case, any peripheral one toggle each, percentages on or off. While something is on a charger, its icon dims and bright bands rise through it, like charge flowing in. It keeps going when the battery is full or held at a limit, so you can see the charger is connected.
+- **The bar shows what you pick:** laptop level, its charge or discharge rate in watts, time left or to full, AirPods (the emptier bud) and their case, any peripheral one toggle each, percentages on or off. While something is on a charger, its icon dims and a bright band rises through it every few seconds, like charge flowing in. It keeps going when the battery is full or held at a limit, so you can see the charger is connected.
 - **Laptop:** drawn big with its level on the display and its readings beside it: what it is doing, the power in or out, health against the design capacity, the charge limit, cycles and energy in Wh. While it is plugged in the drawing pulses, and so does anything else in the panel that is charging.
 - **Drain:** your average drain on battery over the last 12 hours, listed beside the laptop. Time spent plugged in, even held at a charge limit, never counts. The charge history behind it is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
 - **AirPods:** the two buds drawn facing each other with each level on its own side, the case underneath, charging and in-ear state, or an AirPods Max's single battery. Like any other device, they leave the panel when they disconnect; the bar tooltip keeps their last seen levels.
