@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindGlyph, deviceTitle, jblTitle, jblSpeakers, otherDevices, jblStatus, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, statusLines, summary, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep }")()
+const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindGlyph, deviceTitle, jblTitle, jblSpeakers, otherDevices, jblStatus, kindLabel, batteryIcon, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, statusLines, summary, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, chargeBandAlpha, CHARGE_BAND_ALPHA }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -272,6 +272,16 @@ assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
     now += step.wait
   }
   assert.strictEqual(moves, 26)
+}
+
+// The band's ends meet the rest of the drawing flat, so they show no edge.
+{
+  assert.strictEqual(Model.chargeBandAlpha(0), 1)
+  assert.strictEqual(Model.chargeBandAlpha(1), 1)
+  assert.ok(Math.abs(Model.chargeBandAlpha(0.5) - Model.CHARGE_BAND_ALPHA) < 1e-9)
+  assert.strictEqual(Model.chargeBandAlpha(0.25), Model.chargeBandAlpha(0.75))
+  // The first step off an end drops less than a straight line would.
+  assert.ok(1 - Model.chargeBandAlpha(0.125) < (1 - Model.CHARGE_BAND_ALPHA) * 0.25)
 }
 
 console.log("model tests passed")

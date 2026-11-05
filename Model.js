@@ -566,6 +566,13 @@ var CHARGE_SWEEP_MS = 2000
 // How much of the icon still shows at the middle of the band.
 var CHARGE_BAND_ALPHA = 0.3
 
+// How much of a drawing shows at `at`, 0 to 1 across the band: all of it at both
+// ends, CHARGE_BAND_ALPHA in the middle, easing in and out rather than in a line.
+function chargeBandAlpha(at) {
+  var u = 1 - Math.abs(2 * at - 1)
+  return 1 - (1 - CHARGE_BAND_ALPHA) * u * u * (3 - 2 * u)
+}
+
 // `flow` runs from 0 (band below the drawing) to 1 (band above it, at rest).
 // `wait` is how many ms until it next changes.
 function chargeStep(now, stepMs) {

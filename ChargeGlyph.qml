@@ -44,15 +44,24 @@ Item {
     // Rises from below the drawing to above it, one band per cycle.
     Rectangle {
       id: sweep
-      readonly property real band: Math.max(root.height * 0.5, 8)
-      readonly property real bandStart: root.height / height
+      readonly property real band: root.height * 1.5
       y: -(root.height + band) * root.flow
       width: parent.width
       height: root.height * 2 + band
+      // `at` runs across the band, 0 to 1. A big drawing shows a straight fade's
+      // corners as hard lines at the band's ends, so these stops follow a curve.
+      function place(at) { return (root.height + band * at) / height }
+      function tint(at) { return Qt.rgba(1, 1, 1, Model.chargeBandAlpha(at)) }
       gradient: Gradient {
-        GradientStop { position: sweep.bandStart; color: "white" }
-        GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, Model.CHARGE_BAND_ALPHA) }
-        GradientStop { position: 1 - sweep.bandStart; color: "white" }
+        GradientStop { position: sweep.place(0); color: sweep.tint(0) }
+        GradientStop { position: sweep.place(0.125); color: sweep.tint(0.125) }
+        GradientStop { position: sweep.place(0.25); color: sweep.tint(0.25) }
+        GradientStop { position: sweep.place(0.375); color: sweep.tint(0.375) }
+        GradientStop { position: sweep.place(0.5); color: sweep.tint(0.5) }
+        GradientStop { position: sweep.place(0.625); color: sweep.tint(0.625) }
+        GradientStop { position: sweep.place(0.75); color: sweep.tint(0.75) }
+        GradientStop { position: sweep.place(0.875); color: sweep.tint(0.875) }
+        GradientStop { position: sweep.place(1); color: sweep.tint(1) }
       }
     }
   }
@@ -77,15 +86,16 @@ Item {
     maskSpreadAtMin: 1
   }
 
-  // Faster steps than the bar's, because the drawing is bigger and the panel is
-  // only open for a moment. See Model.chargeStep. A closed panel's window is
-  // hidden while this item still counts as visible, so check the window too.
+  // Faster steps than the bar's, because the drawing is bigger, its band travels
+  // further and the panel is only open for a moment. See Model.chargeStep. A
+  // closed panel's window is hidden while this item still counts as visible, so
+  // check the window too.
   Timer {
     repeat: true
     triggeredOnStart: true
     running: root.charging && root.visible && root.Window.visibility !== Window.Hidden
     onTriggered: {
-      const step = Model.chargeStep(Date.now(), 50)
+      const step = Model.chargeStep(Date.now(), 33)
       root.flow = step.flow
       interval = step.wait
     }
