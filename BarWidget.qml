@@ -6,7 +6,7 @@ import qs.Ui
 import "Model.js" as Model
 
 // Bar entry: the batteries picked in settings, each as an icon and level,
-// a band rising through the icon while it is on a charger. The bar draws this widget once per monitor;
+// a dark band rising through the icon while it is on a charger. The bar draws this widget once per monitor;
 // the first instance owns the poller and the others read from it.
 BarWidget {
   id: root
@@ -38,6 +38,9 @@ BarWidget {
   readonly property color barFg: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(barFg, 1.55)
+  // Tabler keeps 2 units clear on each side of its 24 unit grid. This fills the
+  // other 20 to the size the shell paints its own bar icons.
+  readonly property real tablerIconSize: Style.bar.iconSize * 24 / 20
 
   function toneColor(tone) {
     if (tone === "low") return urgent
@@ -206,7 +209,7 @@ BarWidget {
         visible: root.shownItems.length === 0
         anchors.verticalCenter: parent.verticalCenter
         name: "battery"
-        size: Style.bar.iconFont
+        size: root.tablerIconSize
         color: root.needsAccess ? root.urgent : root.barFg
       }
 
@@ -221,7 +224,9 @@ BarWidget {
           BarIcon {
             anchors.verticalCenter: parent.verticalCenter
             name: modelData.icon
-            size: Style.bar.iconFont
+            // The AirPods outline already fills its size, the same size as
+            // Omapods draws it.
+            size: modelData.icon === "airpods" ? Style.bar.iconFont : root.tablerIconSize
             color: root.toneColor(modelData.tone)
             variant: Model.airpodsVariant(root.batteryState.airpods)
             powered: modelData.powered

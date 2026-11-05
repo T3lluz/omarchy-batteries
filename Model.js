@@ -556,13 +556,15 @@ function drainRate(perHour) {
   return (perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10) + "%/h"
 }
 
-// How a charging icon moves: one soft band rises through it, then it rests.
+// How a charging icon moves: one soft dark band rises through it, then it rests.
 // Each move repaints the whole window it sits in and makes the compositor draw
 // that window again, so what costs is moves per second, and the rest costs
 // nothing. Worked out from the clock rather than counted, so every monitor and
 // the panel move together and a window never repaints twice for one step.
 var CHARGE_CYCLE_MS = 4000
 var CHARGE_SWEEP_MS = 2000
+// How much of the icon still shows at the middle of the band.
+var CHARGE_BAND_ALPHA = 0.3
 
 // `flow` runs from 0 (band below the drawing) to 1 (band above it, at rest).
 // `wait` is how many ms until it next changes.

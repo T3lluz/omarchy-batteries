@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Effects
 import "Model.js" as Model
 
-// A device drawn in the panel. While it charges it dims and a soft band rises
-// through it every few seconds, the way the bar's icons show charging.
+// A device drawn in the panel. While it charges a soft dark band rises through
+// it every few seconds, the way the bar's icons show charging.
 Item {
   id: root
 
@@ -32,29 +32,27 @@ Item {
     smooth: true
   }
 
-  // Dim everywhere, bright where the band is. The mask goes through a
-  // texture too, or moving the band would not repaint the panel.
+  // Opaque except for the band, so the drawing stays at full brightness between
+  // sweeps. The mask goes through a texture too, or moving the band would not
+  // repaint the panel.
   Item {
     id: mask
     width: root.width
     height: root.height
     clip: true
 
-    Rectangle {
-      anchors.fill: parent
-      color: Qt.rgba(1, 1, 1, 0.5)
-    }
-
     // Rises from below the drawing to above it, one band per cycle.
     Rectangle {
-      readonly property real travel: root.height + height
-      y: root.height - travel * root.flow
+      id: sweep
+      readonly property real band: Math.max(root.height * 0.5, 8)
+      readonly property real bandStart: root.height / height
+      y: -(root.height + band) * root.flow
       width: parent.width
-      height: Math.max(root.height * 0.5, 8)
+      height: root.height * 2 + band
       gradient: Gradient {
-        GradientStop { position: 0.0; color: "transparent" }
-        GradientStop { position: 0.5; color: "white" }
-        GradientStop { position: 1.0; color: "transparent" }
+        GradientStop { position: sweep.bandStart; color: "white" }
+        GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, Model.CHARGE_BAND_ALPHA) }
+        GradientStop { position: 1 - sweep.bandStart; color: "white" }
       }
     }
   }
