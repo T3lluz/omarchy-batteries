@@ -2,22 +2,26 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 
-// The icon in every part of the panel kit. Batteries draws Tabler icons by
-// name (Icon.qml), so devices look the same on every Nerd Font build; the
-// other plugins' copies of this file type a Nerd Font glyph. The other kit
-// files are the same in all four plugins.
-Icon {
+// The icon in every part of the panel kit: a Nerd Font glyph, `icon` being
+// the character, the same set Omarchy's own panels type. Model.GLYPHS names
+// the ones this plugin uses. The bar draws Tabler icons instead (Icon.qml).
+Item {
+  id: glyph
+
   property string icon: ""
-  // Unused here; kept so every plugin's Glyph takes the same properties.
+  property real size: Style.font.body
+  property color color: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
-  // A section header gives its icon a box wider than the icon's size. There
-  // every icon fills that width, as the JBL wordmark must to be legible, so
-  // all the section marks come out one size. Only SectionHeader has a
-  // detailColor, so the kit files stay as they are in the other plugins.
-  fullWidth: !!parent && parent.detailColor !== undefined
+  implicitWidth: size
+  implicitHeight: size
 
-  name: icon || "battery"
-  size: Style.font.body
-  color: Commons.Color.foreground
+  Text {
+    anchors.centerIn: parent
+    textFormat: Text.PlainText
+    text: glyph.icon
+    color: glyph.color
+    font.family: glyph.fontFamily
+    font.pixelSize: glyph.size
+  }
 }

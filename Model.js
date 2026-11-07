@@ -1,7 +1,8 @@
 .pragma library
 
 // Pure helpers for the widget, kept free of QML so tests/model.test.js can
-// run them under node. Icon names refer to Icons.js (Tabler outline icons).
+// run them under node. The bar's icons are names in Icons.js (Tabler outlines);
+// the panel's are Nerd Font glyphs, the set Omarchy's own panels type.
 
 var KIND_ICONS = {
   "mouse": "mouse",
@@ -24,24 +25,50 @@ var KIND_ICONS = {
 
 // "airpods" is drawn by AirPodsIcon.qml; every other name is in Icons.js.
 var CONNECTION_LABELS = { usb: "USB cable", wireless: "2.4 GHz", bluetooth: "Bluetooth" }
-var CONNECTION_ICONS = { usb: "usb", wireless: "antenna-bars-5", bluetooth: "bluetooth" }
 
-// The panel's solid drawing for a kind, from Glyphs.js, or "" where there is
-// none and the panel falls back to the kind's icon.
+// The panel's glyphs, as escapes because a Nerd Font character is invisible in
+// most editors. Material Design Icons in the Nerd Font.
+var GLYPHS = {
+  battery: "\u{F0079}",
+  unknownBattery: "\u{F0091}",
+  bolt: "\u{F140B}",
+  plug: "\u{F06A5}",
+  refresh: "\u{F0450}",
+  gear: "\u{F0493}",
+  back: "\u{F004D}",
+  key: "\u{F0306}",
+  alert: "\u{F0026}",
+  barTop: "\u{F1513}",
+  bell: "\u{F009A}",
+  lowBattery: "\u{F0083}",
+  percent: "\u{F03F0}",
+  clock: "\u{F0954}",
+  update: "\u{F06B0}",
+  earbuds: "\u{F184F}",
+  airpodsCase: "\u{F03D3}"
+}
+
 var KIND_GLYPHS = {
-  "mouse": "mouse",
-  "keyboard": "keyboard",
-  "headset": "headphones",
-  "headphones": "headphones",
-  "speakers": "speaker",
-  "gaming-input": "gamepad",
-  "tablet": "tablet",
-  "phone": "phone",
-  "laptop": "laptop"
+  "mouse": "\u{F037D}",
+  "keyboard": "\u{F030C}",
+  "headset": "\u{F02CE}",
+  "headphones": "\u{F02CB}",
+  "speakers": "\u{F04C3}",
+  "gaming-input": "\u{F0297}",
+  "touchpad": "\u{F0741}",
+  "tablet": "\u{F04F6}",
+  "pen": "\u{F03EB}",
+  "phone": "\u{F011C}",
+  "media-player": "\u{F075A}",
+  "remote-control": "\u{F0454}",
+  "ups": "\u{F010C}",
+  "bluetooth-generic": "\u{F00AF}",
+  "laptop": "\u{F0322}",
+  "airpods": "\u{F184F}"
 }
 
 function kindGlyph(kind) {
-  return KIND_GLYPHS[kind] || ""
+  return KIND_GLYPHS[kind] || GLYPHS.battery
 }
 
 function kindIcon(kind) {
@@ -68,15 +95,6 @@ function otherDevices(devices) {
   return (devices || []).filter(function(d) { return d.source !== "jbl" })
 }
 
-function jblStatus(speakers) {
-  var n = (speakers || []).length
-  return n === 1 ? "1 connected" : n + " connected"
-}
-
-function connectionIcon(connection) {
-  return CONNECTION_ICONS[connection] || ""
-}
-
 function kindLabel(kind) {
   if (kind === "gaming-input") return "Controller"
   if (kind === "ups") return "UPS"
@@ -86,19 +104,35 @@ function kindLabel(kind) {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+// A device's name where room is short: its kind, unless the kind says nothing.
+function shortName(device) {
+  var kind = device.kind
+  return kind && kind !== "bluetooth-generic" && kind !== "unknown" ? kindLabel(kind) : deviceTitle(device)
+}
+
 function hasLevel(level) {
   return level !== null && level !== undefined
 }
 
-// Battery outline with as many bars as the level earns.
-function batteryIcon(level, charging) {
-  if (charging) return "battery-charging"
-  if (!hasLevel(level)) return "battery-off"
-  if (level >= 88) return "battery-4"
-  if (level >= 63) return "battery-3"
-  if (level >= 38) return "battery-2"
-  if (level >= 13) return "battery-1"
-  return "battery"
+// The panel header's battery: the ramps Omarchy's power panel uses, ten steps.
+var BATTERY_RAMP = ["\u{F007A}", "\u{F007B}", "\u{F007C}", "\u{F007D}", "\u{F007E}", "\u{F007F}", "\u{F0080}", "\u{F0081}", "\u{F0082}", "\u{F0079}"]
+var CHARGING_RAMP = ["\u{F089C}", "\u{F0086}", "\u{F0087}", "\u{F0088}", "\u{F089D}", "\u{F0089}", "\u{F089E}", "\u{F008A}", "\u{F008B}", "\u{F0085}"]
+
+function batteryGlyph(level, charging) {
+  if (!hasLevel(level)) return GLYPHS.unknownBattery
+  var step = Math.max(0, Math.min(9, Math.floor(level / 10)))
+  return (charging ? CHARGING_RAMP : BATTERY_RAMP)[step]
+}
+
+// The mark beside a level: a bolt while charge flows in, a plug while a charger
+// is connected but nothing flows (full, or held at a limit), else nothing. An
+// old reading says nothing about the charger now.
+function powerGlyph(item) {
+  if (!item) return ""
+  if (item.stale) return ""
+  if (item.charging) return GLYPHS.bolt
+  if (item.acOnline || item.powered) return GLYPHS.plug
+  return ""
 }
 
 // Parses bin/batteries' JSON. Returns null when it is not that.
@@ -207,6 +241,18 @@ function subtitle(device) {
   return parts.join(" · ")
 }
 
+// Contrast between two colours ({r, g, b}, 0 to 1), by the WCAG formula. Themes
+// may have a muted "red" (Solitude's is a dark grey), and low must never read
+// quieter than normal.
+function contrast(a, b) {
+  function lum(c) {
+    function ch(v) { return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+    return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b)
+  }
+  var la = lum(a), lb = lum(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
 // ------------------------------------------------------------------ laptop
 
 function laptopStatus(lap) {
@@ -225,9 +271,9 @@ function laptopStatus(lap) {
   return "Unknown"
 }
 
-// The laptop's readings beside its drawing, as label and value rows: power
-// in or out, health, the charge limit, cycles, stored energy, and the
-// average drain on battery once there is one (null until then).
+// The laptop's readings, as label and value pairs: power in or out, health,
+// the charge limit, cycles, stored energy, and the average drain on battery
+// once there is one (null until then).
 function laptopFacts(lap, drainPerHour) {
   if (!lap) return []
   var facts = [{ label: "Power", value: watts(lap.rateW) }]
@@ -241,19 +287,10 @@ function laptopFacts(lap, drainPerHour) {
   return facts
 }
 
-// A status such as "Plugged in · held at 90% limit" as one line per part,
-// each starting with a capital, for the panel's big laptop reading where
-// the joined line would wrap mid-phrase.
-function statusLines(text) {
-  return String(text || "").split(" · ").map(function(part) {
-    return part.charAt(0).toUpperCase() + part.slice(1)
-  }).join("\n")
-}
-
 // What the pack holds now against what it holds full.
 function laptopEnergy(lap) {
   if (!lap || !lap.energyFullWh) return ""
-  return lap.energyWh + " of " + lap.energyFullWh + " Wh"
+  return lap.energyWh + "/" + lap.energyFullWh + " Wh"
 }
 
 // ----------------------------------------------------------------- AirPods
@@ -284,31 +321,113 @@ function airpodsShown(pods) {
 
 function airpodsStatus(pods) {
   if (!pods) return ""
-  if (pods.stale) return "Not connected · last levels"
+  if (pods.stale) return (pods.connected ? "Connected" : "Not connected") + " · last levels"
   if (pods.connected) {
+    if (!pods.known) return "Connected · waiting for levels"
     var inEar = [pods.left, pods.right].filter(function(p) { return p && p.inEar }).length
     return "Connected" + (inEar === 2 ? " · in both ears" : inEar === 1 ? " · in one ear" : "")
   }
   return pods.known ? "In range, not connected" : "Not connected"
 }
 
-// ------------------------------------------------------------- summary
+// ----------------------------------------------------- the panel's caption
 
-// The panel header's one line: what needs attention, or that nothing does.
-function summary(state, threshold) {
-  if (!state) return ""
+// The caption under the panel's title changes the way Omarchy's own panels do:
+// what needs attention holds still, and otherwise true readings take turns with
+// a little flavour, chosen by what the laptop is doing.
+var PHRASES = {
+  charging: ["Hoarding electrons", "Topping up the tanks", "Soaking up watts"],
+  discharging: ["Sipping electrons", "Stretching the juice", "Counting down coulombs"],
+  idle: ["Counting electrons", "Weighing coulombs", "Taking pulses"]
+}
+
+// Every battery with a fresh reading, under a name short enough for the caption.
+function freshBatteries(state) {
   var all = []
+  if (!state) return all
   if (state.laptop && hasLevel(state.laptop.level)) all.push({ name: "Laptop", item: state.laptop })
   var pods = state.airpods
-  if (pods && pods.known && !pods.stale && hasLevel(pods.level)) all.push({ name: pods.name || "AirPods", item: pods })
+  if (pods && pods.known && !pods.stale) {
+    // One battery in the count, at whichever is emptier: the buds or their case.
+    var pack = pods["case"]
+    var caseLower = !!pack && hasLevel(pack.level) && (!hasLevel(pods.level) || pack.level < pods.level)
+    if (caseLower) all.push({ name: "AirPods case", item: pack })
+    else if (hasLevel(pods.level)) all.push({ name: "AirPods", item: pods })
+  }
   ;(state.devices || []).forEach(function(d) {
-    if (hasLevel(d.level) && !d.stale) all.push({ name: kindLabel(d.kind), item: d })
+    if (hasLevel(d.level) && !d.stale) all.push({ name: shortName(d), item: d })
   })
-  if (!all.length) return "No batteries found"
+  return all
+}
+
+function lowestOf(batteries) {
+  return batteries.reduce(function(a, b) { return b.item.level < a.item.level ? b : a })
+}
+
+function laptopPhrase(lap) {
+  if (!lap) return ""
+  if (lap.status === "charging") {
+    var toFull = duration(lap.timeToFull)
+    return toFull ? (lap.chargeLimit ? "Laptop at " + lap.chargeLimit + "%" : "Laptop full") + " in " + toFull : "Laptop charging"
+  }
+  if (lap.status === "discharging") {
+    var left = duration(lap.timeToEmpty)
+    return left ? "Laptop has " + left + " left" : "Laptop on battery"
+  }
+  if (lap.status === "full") return "Laptop fully charged"
+  if (lap.status === "held") return "Laptop held at " + lap.chargeLimit + "%"
+  if (lap.status === "plugged") return "Laptop plugged in"
+  return ""
+}
+
+// The lines the caption takes turns on; one line holds still.
+function heroPhrases(state, threshold) {
+  var all = freshBatteries(state)
+  if (!all.length) {
+    // Rows can still be on screen, asleep or holding a last level.
+    var rows = !!state && (!!state.laptop || !!state.airpods || (state.devices || []).length > 0)
+    return [rows ? "No fresh readings" : "No batteries found"]
+  }
+
   var low = all.filter(function(b) { return isLow(b.item, threshold) })
-  if (low.length === 1) return low[0].name + " is low · " + percent(low[0].item.level)
-  if (low.length > 1) return low.length + " batteries are low"
-  return (all.length === 1 ? "1 battery · above " : all.length + " batteries · all above ") + threshold + "%"
+  if (low.length) {
+    var worst = lowestOf(low)
+    return [(low.length > 1 ? low.length + " low, " + worst.name.toLowerCase() + " at " : worst.name + " low at ") + percent(worst.item.level)]
+  }
+
+  // A battery can sit under the threshold and not count as low while it charges,
+  // and the first line must not claim otherwise.
+  var under = all.filter(function(b) { return b.item.level <= threshold })
+  var facts = under.length
+    ? under.map(function(b) { return b.name + " charging at " + percent(b.item.level) })
+    : [all.length === 1 ? "1 battery above " + threshold + "%" : all.length + " batteries above " + threshold + "%"]
+  var lap = laptopPhrase(state.laptop)
+  if (lap) facts.push(lap)
+  if (all.length > 1) {
+    var lowest = lowestOf(all)
+    facts.push(lowest.name + " lowest at " + percent(lowest.item.level))
+  }
+
+  var status = state.laptop ? state.laptop.status : ""
+  var flavour = status === "charging" ? PHRASES.charging : status === "discharging" ? PHRASES.discharging : PHRASES.idle
+  var lines = []
+  facts.forEach(function(fact, i) {
+    lines.push(fact)
+    lines.push(flavour[i % flavour.length])
+  })
+  return lines
+}
+
+// What the panel header's battery shows: whatever is low, else the laptop,
+// else the emptiest battery there is.
+function heroBattery(state, threshold) {
+  var all = freshBatteries(state)
+  if (!all.length) return { level: null, charging: false, low: false }
+  var low = all.filter(function(b) { return isLow(b.item, threshold) })
+  var pick = low.length ? lowestOf(low)
+    : state.laptop && hasLevel(state.laptop.level) ? { item: state.laptop }
+    : lowestOf(all)
+  return { level: pick.item.level, charging: !!pick.item.charging, low: low.length > 0 }
 }
 
 // ---------------------------------------------------------------- the bar
@@ -354,17 +473,21 @@ function barPicks(state) {
   var picks = []
   var lap = state ? state.laptop : null
   if (lap) {
-    picks.push({ key: "barLaptop", icon: "device-laptop", label: "Laptop", hint: "Its level; charge flows up through the icon while plugged in", fallback: true })
-    picks.push({ key: "barLaptopRate", icon: "bolt", label: "Laptop power", hint: "Watts going in or out", fallback: false })
-    picks.push({ key: "barLaptopTime", icon: "clock-hour-4", label: "Laptop time", hint: "Time left, or time to full while charging", fallback: false })
+    picks.push({ key: "barLaptop", icon: kindGlyph("laptop"), label: "Laptop", hint: "Its level; charge flows up through the icon while plugged in", fallback: true })
+    picks.push({ key: "barLaptopRate", icon: GLYPHS.bolt, label: "Laptop power", hint: "Watts going in or out", fallback: false })
+    picks.push({ key: "barLaptopTime", icon: GLYPHS.clock, label: "Laptop time", hint: "Time left, or time to full while charging", fallback: false })
   }
   var pods = state ? state.airpods : null
   if (airpodsShown(pods)) {
-    picks.push({ key: "barAirpods", icon: "device-airpods", label: pods.name || "AirPods", hint: "The emptier bud, while they are connected", fallback: true })
-    if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", icon: "device-airpods-case", label: "AirPods case", hint: "While the case is open and in range", fallback: false })
+    picks.push({ key: "barAirpods", icon: GLYPHS.earbuds, label: pods.name || "AirPods", hint: "The emptier bud, while they are connected", fallback: true })
+    if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", icon: GLYPHS.airpodsCase, label: "AirPods case", hint: "While the case is open and in range", fallback: false })
   }
-  ;((state && state.devices) || []).forEach(function(d) {
-    picks.push({ device: d, icon: kindIcon(d.kind), label: deviceTitle(d), hint: kindLabel(d.kind) + " · " + subtitle(d) })
+  var devices = (state && state.devices) || []
+  devices.forEach(function(d) {
+    // A half-width tile fits "Mouse", not a model. The model takes over when
+    // two devices of a kind need telling apart, and the tooltip always names it.
+    var alone = devices.filter(function(o) { return o.kind === d.kind }).length === 1
+    picks.push({ device: d, icon: kindGlyph(d.kind), label: alone ? shortName(d) : deviceTitle(d), hint: deviceTitle(d) + " · " + subtitle(d) })
   })
   return picks
 }
@@ -488,7 +611,7 @@ function tooltip(state) {
 
 // ---------------------------------------------------------------- history
 
-// The laptop's level over time, for the panel's graph: [[unixSeconds, level,
+// The laptop's level over time, behind the panel's average drain: [[unixSeconds, level,
 // plugged in 0/1], ...], oldest first. A sample is kept every `gap` seconds,
 // or sooner when the level or the power changes, for `keep` seconds.
 //
@@ -565,14 +688,6 @@ var CHARGE_CYCLE_MS = 4000
 var CHARGE_SWEEP_MS = 2000
 // How much of the icon still shows at the middle of the band.
 var CHARGE_BAND_ALPHA = 0.3
-
-// How much of a drawing shows at `at`, 0 to 1 across the band: all of it at both
-// ends, CHARGE_BAND_ALPHA in the middle, easing in and out rather than in a line.
-function chargeBandAlpha(at) {
-  var u = 1 - Math.abs(2 * at - 1)
-  return 1 - (1 - CHARGE_BAND_ALPHA) * u * u * (3 - 2 * u)
-}
-
 // `flow` runs from 0 (band below the drawing) to 1 (band above it, at rest).
 // `wait` is how many ms until it next changes.
 function chargeStep(now, stepMs) {

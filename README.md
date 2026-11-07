@@ -4,29 +4,30 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.6.3-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.7.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-34413e" />
   </p>
   <p><a href="#install"><b>Install</b></a> · <a href="#features">Features</a> · <a href="#supported-batteries">Supported batteries</a> · <a href="#settings">Settings</a> · <a href="#commands">Commands</a></p>
-  <img src="assets/preview.png" width="380" alt="The Batteries panel: the laptop drawn with its level and readings, the two AirPods with a level beside each, and a mouse" />
+  <img src="assets/preview.png" width="380" alt="The Batteries panel: the laptop with its level bar and readings, AirPods bud by bud, and a mouse" />
 </div>
 
 ## Features
 
 - **The bar shows what you pick:** laptop level, its charge or discharge rate in watts, time left or to full, AirPods (the emptier bud) and their case, any peripheral one toggle each, percentages on or off. While something is on a charger, a dark band rises through its icon every few seconds, like charge flowing in. It keeps going when the battery is full or held at a limit, so you can see the charger is connected.
-- **Laptop:** drawn big with its level on the display and its readings beside it: what it is doing, the power in or out, health against the design capacity, the charge limit, cycles and energy in Wh. While it is plugged in the drawing pulses, and so does anything else in the panel that is charging.
-- **Drain:** your average drain on battery over the last 12 hours, listed beside the laptop. Time spent plugged in, even held at a charge limit, never counts. The charge history behind it is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
-- **AirPods:** the two buds drawn facing each other with each level on its own side, the case underneath, charging and in-ear state, or an AirPods Max's single battery. Like any other device, they leave the panel when they disconnect; the bar tooltip keeps their last seen levels.
-- **JBL speakers:** their own section under the JBL mark, each titled with the mark and its model (Charge 5, Boombox 3, ...), the name you gave it in the JBL app underneath, with level and charging, read the way the JBL Portable app reads them.
-- **Devices:** every peripheral drawn solid like the AirPods (mouse, keyboard, speaker, headphones, controller, phone, tablet), with its level, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
+- **Laptop:** its level and what it is doing, a bar with the charge limit marked on it, then the power in or out, health against the design capacity, the limit, cycles and energy in Wh. A bolt means charge is flowing in and that bar pulses, a plug means it is on a charger with nothing flowing. Same for everything else in the panel.
+- **Drain:** your average drain on battery over the last 12 hours, listed with the laptop. Time spent plugged in, even held at a charge limit, never counts. The charge history behind it is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
+- **AirPods:** left, right and case side by side, each with its level, bar and charging mark, whether they are in your ears, or an AirPods Max's single battery. Like any other device, they leave the panel when they disconnect; the bar tooltip keeps their last seen levels.
+- **JBL speakers:** first among the devices under the JBL mark, each titled with its model (Charge 5, Boombox 3, ...), the name you gave it in the JBL app underneath, with level and charging, read the way the JBL Portable app reads them.
+- **Devices:** one row per peripheral (mouse, keyboard, speaker, headphones, controller, phone, tablet and more), with its level, a bar, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
+- **At a glance:** the line under the panel's title takes turns on what is worth knowing, like how long the laptop has left and which battery is lowest, the way Omarchy's own panels do. Anything low holds that line still.
 - **Live:** plugging a cable or the charger in or out refreshes within a second or two (it listens to udev), as does any change librepods reports for your AirPods.
 - **Low battery:** one notification when a peripheral or your AirPods drop below the threshold. The laptop keeps Omarchy's own warning.
 - **Updates from the panel:** Settings says when a new version is on GitHub and installs it with one click. Edits you made in the plugin folder are kept in `git stash`, not lost.
 - **Every monitor agrees:** the bar draws the widget once per screen; they share one poller and read their settings straight from `shell.json`, so a choice made on one screen shows on all of them and survives a restart.
-- Icons are [Tabler](https://tabler.io/icons) outlines drawn in your theme's colours, so they never depend on the Nerd Font build. The AirPods outline is the one from [omapods](https://github.com/thisisgm/omarchy-pods), picked by model.
+- The panel's icons are the Nerd Font glyphs Omarchy's own panels use. The bar's are [Tabler](https://tabler.io/icons) outlines drawn in your theme's colours. The AirPods outline is the one from [omapods](https://github.com/thisisgm/omarchy-pods), picked by model.
 
 ## Install
 
@@ -114,8 +115,7 @@ Glorious Model O Wireless          mouse       83% ⚡  charging, usb via glorio
 ```bash
 node tests/model.test.js
 python3 -B -m unittest discover tests
-python3 scripts/fetch-icons.py    # refetch the Tabler icons, regenerate Icons.js
-python3 scripts/draw-glyphs.py    # redraw the panel's device drawings, regenerate Glyphs.js
+python3 scripts/fetch-icons.py    # refetch the bar's Tabler icons, regenerate Icons.js
 omarchy restart shell             # pick up QML changes
 ```
 

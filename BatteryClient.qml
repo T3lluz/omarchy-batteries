@@ -48,8 +48,6 @@ Item {
     id: updaterItem
     pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")).replace(/\/$/, "")
     autoCheck: root.autoUpdateCheck
-    // Batteries' Glyph draws Tabler icons by name.
-    icons: ({ update: "refresh", done: "check" })
   }
 
   PersistentProperties {
