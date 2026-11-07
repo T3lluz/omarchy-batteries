@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindGlyph, deviceTitle, jblTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, CHARGE_BAND_ALPHA }")()
+const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindGlyph, deviceTitle, jblTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -336,3 +336,14 @@ assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
 }
 
 console.log("model tests passed")
+
+// The AirPods icon waves while any part charges, not only the bud it shows.
+{
+  const pods = over => Model.barItems(Object.assign({}, state, { airpods: Object.assign({}, podsFresh, over) }), opts).find(i => i.key === "airpods").powered
+  const idle = { charging: false, inEar: true }
+  assert.strictEqual(pods({ left: Object.assign({ level: 9 }, idle), right: { level: 13, charging: true, inEar: false }, case: { level: 30, charging: false }, level: 9 }), true)
+  assert.strictEqual(pods({ left: Object.assign({ level: 9 }, idle), right: Object.assign({ level: 13 }, idle), case: { level: 30, charging: true } }), true)
+  assert.strictEqual(pods({ left: Object.assign({ level: 9 }, idle), right: Object.assign({ level: 13 }, idle), case: { level: 30, charging: false } }), false)
+  assert.strictEqual(Model.airpodsPowered({ isHeadset: true, headset: { level: 50, charging: true }, charging: true }), true)
+  assert.strictEqual(Model.airpodsPowered(null), false)
+}

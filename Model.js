@@ -498,6 +498,14 @@ function barPickedText(count) {
   return count > 0 ? count + " SHOWN" : "ICON ONLY"
 }
 
+// The AirPods icon stands for buds and case together, so it shows the wave
+// while any of them charges, not only the bud whose level it shows: a bud in
+// the case charges while the other is in an ear.
+function airpodsPowered(pods) {
+  if (!pods) return false
+  return !!(pods.charging || ["left", "right", "headset", "case"].some(function(k) { return pods[k] && pods[k].charging }))
+}
+
 function barItems(state, opts) {
   var items = []
   var t = opts.lowThreshold || 20
@@ -522,7 +530,7 @@ function barItems(state, opts) {
         key: "airpods",
         icon: "airpods",
         text: opts.percent ? percent(pods.level) : "",
-        powered: !!pods.charging,
+        powered: airpodsPowered(pods),
         tone: isLow(pods, t) ? "low" : "normal"
       })
     }
