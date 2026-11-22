@@ -1,11 +1,13 @@
 import QtQuick
+import QtQuick.Window
 import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Bar entry: the batteries picked in settings, each as an icon and level,
+// Bar entry: the batteries picked in settings, each as a pixel icon and its
+// level in the panel's block face, drawn as pixels in the bar's own colours,
 // a dark band rising through the icon while it is on a charger. The bar draws this widget once per monitor;
 // the first instance owns the poller and the others read from it.
 BarWidget {
@@ -38,9 +40,14 @@ BarWidget {
   readonly property color barFg: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(barFg, 1.55)
-  // Tabler keeps 2 units clear on each side of its 24 unit grid. This fills the
-  // other 20 to the size the shell paints its own bar icons.
-  readonly property real tablerIconSize: Style.bar.iconSize * 24 / 20
+  // Everything on whole device pixels, never scaled. Figures in the pixel
+  // type stand as tall as the bar's own digits. Icons take the largest sharp
+  // size that is not bigger than the shell's own (its icon size, with pixel
+  // art's two units clear around the 24): twelve device pixels on a 1.25
+  // scale, twenty-four on a 2.
+  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  readonly property int pixelUnit: Math.max(1, Math.round(button.fontSize * 0.72 * dpr / 5))
+  readonly property int iconUnit: Math.max(1, Math.floor(Style.bar.iconSize * 24 / 20 * dpr / 12))
 
   function toneColor(tone) {
     if (tone === "low") return urgent
@@ -185,12 +192,38 @@ BarWidget {
     }
   }
 
+  // The hover card: after the shell's tooltip delay, gone the moment the
+  // pointer leaves or the panel opens.
+  readonly property var hoverRows: Model.hoverRows(batteryState, Date.now() / 1000)
+  readonly property bool cardWanted: button.tooltipHovered && !opened && !needsAccess && hoverRows.length > 0
+  property bool cardShown: false
+  onCardWantedChanged: if (!cardWanted) cardShown = false
+
+  Timer {
+    interval: 400
+    running: root.cardWanted && !root.cardShown
+    onTriggered: root.cardShown = true
+  }
+
+  HoverCard {
+    target: button
+    bar: root.bar
+    shown: root.cardShown
+    rows: root.hoverRows
+    palette: panelLoader.item ? panelLoader.item.palette : ({})
+    lowThreshold: root.lowThreshold
+    unit: root.pixelUnit
+    fontFamily: button.fontFamily
+  }
+
   WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     hasVisualContent: true
-    tooltipText: root.needsAccess ? "Batteries: click to grant access to your mouse" : Model.tooltip(root.batteryState)
+    // The hover card below takes the place of the plain tooltip; the plain
+    // one stays only to point at the access the panel needs.
+    tooltipText: root.needsAccess ? "Batteries: click to grant access to your mouse" : ""
     fixedWidth: root.vertical ? -1 : content.implicitWidth + scaledHorizontalMargin * 2
     fixedHeight: root.vertical ? Style.bar.iconSlot : -1
 
@@ -205,11 +238,11 @@ BarWidget {
       spacing: Style.space(5)
 
       // Nothing picked, or nothing present: the battery mark alone.
-      Icon {
+      PixelIcon {
         visible: root.shownItems.length === 0
         anchors.verticalCenter: parent.verticalCenter
-        name: "battery"
-        size: root.tablerIconSize
+        name: "battery-medium"
+        unit: root.iconUnit
         color: root.needsAccess ? root.urgent : root.barFg
       }
 
@@ -224,23 +257,17 @@ BarWidget {
           BarIcon {
             anchors.verticalCenter: parent.verticalCenter
             name: modelData.icon
-            // The AirPods outline already fills its size, the same size as
-            // Omapods draws it.
-            size: modelData.icon === "airpods" ? Style.bar.iconFont : root.tablerIconSize
+            unit: root.iconUnit
             color: root.toneColor(modelData.tone)
-            variant: Model.airpodsVariant(root.batteryState.airpods)
             powered: modelData.powered
           }
 
-          Text {
+          PixelText {
             visible: text !== "" && !root.vertical
             anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
             text: modelData.text
+            unit: root.pixelUnit
             color: root.toneColor(modelData.tone)
-            font.family: button.fontFamily
-            font.pixelSize: button.fontSize
-            renderType: Text.NativeRendering
           }
         }
       }

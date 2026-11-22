@@ -78,7 +78,7 @@ Item {
     }
     errorText = ""
     var next = Model.withLastKnown(parsed.devices, persisted.lastDevices)
-    var pods = Model.airpodsWithLastKnown(parsed.airpods, persisted.lastAirpods)
+    var pods = Model.airpodsWithLastKnown(parsed.airpods, persisted.lastAirpods, Date.now() / 1000)
     devices = next
     airpods = pods
     laptop = parsed.laptop
@@ -90,7 +90,10 @@ Item {
       }
     }
     persisted.lastDevices = next
-    if (pods && pods.known) persisted.lastAirpods = pods
+    if (pods && pods.known) {
+      persisted.lastAirpods = pods
+      saveAirpods(pods)
+    }
     needsAccess = parsed.needsAccess
     udevInstalled = parsed.udevInstalled
     lastPollMs = Date.now()
@@ -105,6 +108,36 @@ Item {
           "-i", "battery-caution", (d.kind === "airpods" ? "AirPods" : Model.kindLabel(d.kind)) + " battery low",
           d.name + " is at " + Model.percent(d.level) + ". Plug it in."])
       }
+    }
+  }
+
+  // The AirPods' last levels go to disk too, so a bud left in its case
+  // keeps its level through a shell restart. Written only when a level or
+  // what answers changes, not on every poll.
+  readonly property string airpodsPath: historyDir + "/airpods.json"
+  property string airpodsSaved: ""
+
+  function saveAirpods(pods) {
+    var key = JSON.stringify(["left", "right", "case", "headset"].map(function(k) {
+      return pods[k] ? [pods[k].level, !!pods[k].stale] : null
+    }).concat([pods.name]))
+    if (key === airpodsSaved) return
+    airpodsSaved = key
+    airpodsFile.setText(JSON.stringify(pods) + "\n")
+  }
+
+  FileView {
+    id: airpodsFile
+    path: root.airpodsPath
+    blockLoading: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      if (persisted.lastAirpods) return
+      try {
+        var saved = JSON.parse(text())
+        if (saved && saved.name) persisted.lastAirpods = saved
+      } catch (e) {}
     }
   }
 

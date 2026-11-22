@@ -2,64 +2,78 @@ import QtQuick
 import QtQuick.Effects
 import "Model.js" as Model
 
-// A bar item's device icon. While it is on a charger, a soft dark band rises
-// through it every few seconds and the icon stays at full brightness between
-// sweeps. That includes full or held at a limit, so a connected charger always
-// shows, on the device itself rather than as an extra glyph.
+// A bar item's device icon, in pixel art. While it is on a charger, a dark
+// band rises through it every few seconds and the icon stays at full
+// brightness between sweeps. That includes full or held at a limit, so a
+// connected charger always shows, on the device itself rather than as an
+// extra glyph. The band is pixel art too: hard edged, a whole cell at a time.
 Item {
   id: root
-  // A name from Icons.js, or "airpods" for the drawn AirPods outline.
-  property string name: "battery"
-  property string variant: "buds"
-  property real size: 16
+  // A name from Pixels.js.
+  property string name: "battery-medium"
+  // Device pixels per cell of the icon's halved grid (PixelIcon.unit).
+  property int unit: 1
   property color color: "white"
   property bool powered: false
   // 0 to 1: how far the band has risen, from below the icon to above it.
   property real flow: 0
 
-  implicitWidth: size
-  implicitHeight: size
+  implicitWidth: art.implicitWidth
+  implicitHeight: art.implicitHeight
 
-  Glyph {
+  PixelIcon {
     id: art
     name: root.name
-    variant: root.variant
-    size: root.size
+    unit: root.unit
     color: root.color
   }
 
   // While on a charger the icon shows only through the effect below. Hidden by
-  // its texture rather than `visible: false`: hidden items stop the AirPods
-  // outline's own layer from rendering.
+  // its texture rather than `visible: false`, which would stop it rendering.
   ShaderEffectSource {
     id: artTexture
     visible: false
     sourceItem: art
     hideSource: root.powered
     live: root.powered
-    smooth: true
+    smooth: false
   }
 
-  // Opaque except for the band. A gradient rather than a clip: a clip cuts on
-  // whole pixels and steps, the gradient moves by fractions of one, and its
-  // soft edges hide the steps. Three icons tall with the band in the middle, so
-  // it starts below the icon and ends above it. The mask is hidden by its
-  // texture too, or moving it would not repaint the bar.
+  // Opaque except for the band, three cells of the icon's halved grid tall.
+  // It starts below the icon and ends above it, moving a whole cell at a time,
+  // so most steps of the clock change nothing and repaint nothing. The mask
+  // is hidden by its texture too, or moving it would not repaint the bar.
   Item {
     id: mask
-    width: root.size
-    height: root.size
+    width: art.width
+    height: art.height
     clip: true
 
+    readonly property real cell: art.width / 12
+    readonly property int bandCells: 3
+
+    readonly property real bandY: Math.round((1 - root.flow) * (12 + bandCells) - bandCells) * cell
+
+    // Solid above and below the band, never under it: a see-through band
+    // laid over solid white would come out solid.
     Rectangle {
-      y: -2 * root.size * root.flow
       width: parent.width
-      height: root.size * 3
-      gradient: Gradient {
-        GradientStop { position: 1 / 3; color: "white" }
-        GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, Model.CHARGE_BAND_ALPHA) }
-        GradientStop { position: 2 / 3; color: "white" }
-      }
+      height: Math.max(0, mask.bandY)
+      color: "white"
+    }
+
+    Rectangle {
+      y: mask.bandY
+      width: parent.width
+      height: mask.cell * mask.bandCells
+      color: Qt.rgba(1, 1, 1, Model.CHARGE_BAND_ALPHA)
+    }
+
+    Rectangle {
+      y: Math.max(0, mask.bandY + mask.cell * mask.bandCells)
+      width: parent.width
+      height: Math.max(0, parent.height - y)
+      color: "white"
     }
   }
 
@@ -69,7 +83,7 @@ Item {
     sourceItem: mask
     hideSource: true
     live: root.powered
-    smooth: true
+    smooth: false
   }
 
   MultiEffect {
@@ -79,39 +93,12 @@ Item {
     maskEnabled: true
     maskSource: maskTexture
     // A threshold of 0.5 spread by 1 ramps from alpha 0 to 1: the mask's
-    // alpha passes through as it is, so the band edges stay soft.
+    // alpha passes through as it is.
     maskThresholdMin: 0.5
     maskSpreadAtMin: 1
   }
 
-  // Inline components cannot see `root`, so the glyph takes what it draws.
-  component Glyph: Item {
-    id: glyph
-    property string name
-    property string variant
-    property real size
-    property color color
-    width: size
-    height: size
-
-    Icon {
-      visible: glyph.name !== "airpods"
-      name: glyph.name
-      size: glyph.size
-      color: glyph.color
-    }
-
-    AirPodsIcon {
-      visible: glyph.name === "airpods"
-      iconSize: glyph.size
-      variant: glyph.variant
-      color: glyph.color
-    }
-  }
-
-  // Each step repaints the whole bar on every monitor, so the band moves about
-  // once per screen pixel (12.5 steps a second) and not at all between sweeps.
-  // See Model.chargeStep.
+  // Each step repaints the whole bar on every monitor; see Model.chargeStep.
   Timer {
     repeat: true
     triggeredOnStart: true

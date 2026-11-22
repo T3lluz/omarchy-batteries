@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { airpodsVariant, kindIcon, kindGlyph, deviceTitle, jblTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA }")()
+const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, storyOf, storyPose, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -62,8 +62,8 @@ r = Model.lowBatteryAlerts([low], 20, r.notified)
 assert.strictEqual(r.alerts.length, 1)
 
 // Icons and labels
-assert.strictEqual(Model.kindIcon("mouse"), "mouse")
-assert.strictEqual(Model.kindIcon("toaster"), "battery")
+assert.strictEqual(Model.kindPixel("mouse"), "mouse")
+assert.strictEqual(Model.kindPixel("toaster"), "battery-medium")
 assert.strictEqual(Model.kindLabel("gaming-input"), "Controller")
 assert.strictEqual(Model.kindLabel("mouse"), "Mouse")
 assert.strictEqual(Model.kindLabel("speakers"), "Speaker")
@@ -72,12 +72,10 @@ assert.strictEqual(Model.kindLabel("speakers"), "Speaker")
 const charge = { id: "jbl:F8", name: "Sound object", model: "JBL Charge 5", kind: "speakers", source: "jbl", level: 60, status: "discharging", connection: "bluetooth" }
 const boombox = { id: "jbl:AA", name: "JBL Boombox 3", model: "JBL Boombox 3", kind: "speakers", source: "jbl", level: 90, status: "discharging", connection: "bluetooth" }
 assert.strictEqual(Model.deviceTitle(charge), "JBL Charge 5")
-assert.strictEqual(Model.jblTitle(charge), "Charge 5")
-assert.strictEqual(Model.jblTitle({ name: "Sound object", source: "jbl" }), "Sound object")
 assert.strictEqual(Model.deviceTitle({ name: "G502" }), "G502")
 assert.strictEqual(Model.subtitle(charge), "Sound object · On battery · Bluetooth")
 assert.strictEqual(Model.subtitle(boombox), "On battery · Bluetooth")
-assert.strictEqual(Model.kindIcon(charge.kind), "device-speaker")
+assert.strictEqual(Model.kindPixel(charge.kind), "volume-2")
 const glorious = { id: "m", name: "Mouse", kind: "mouse", source: "glorious" }
 assert.deepStrictEqual(Model.jblSpeakers([glorious, charge]), [charge])
 assert.deepStrictEqual(Model.otherDevices([glorious, charge]), [glorious])
@@ -104,15 +102,13 @@ assert.strictEqual(Model.powerGlyph({ charging: false }), "")
 assert.strictEqual(Model.powerGlyph(null), "")
 assert.strictEqual(Model.powerGlyph({ charging: true, stale: true }), "")
 
-// Every icon the model names exists in Icons.js.
-const iconSource = fs.readFileSync(path.join(__dirname, "..", "Icons.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Icons = new Function(iconSource + "\nreturn paths")()
-const markSource = fs.readFileSync(path.join(__dirname, "..", "Marks.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Marks = new Function(markSource + "\nreturn { fills }")()
+// Every icon the model and the QML name exists in Pixels.js.
+const pixelSource = fs.readFileSync(path.join(__dirname, "..", "Pixels.js"), "utf8").replace(/^\.pragma library\s*/, "")
+const Pixels = new Function(pixelSource + "\nreturn icons")()
 const modelSource = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
-const qml = ["BarWidget.qml", "Panel.qml", "SectionHeader.qml", "StatTile.qml", "ToggleTile.qml", "SwitchRow.qml", "Notice.qml"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n")
-for (const m of (modelSource + qml).matchAll(/(?:icon|name): "([a-z0-9-]+)"/g)) assert.ok(Icons[m[1]] || Marks.fills[m[1]] || m[1] === "airpods", "missing icon " + m[1])
-for (const k of ["mouse", "keyboard", "headset", "laptop", "phone", "gaming-input", "ups"]) assert.ok(Icons[Model.kindIcon(k)], k)
+const qml = ["BarWidget.qml", "Panel.qml", "BarIcon.qml"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n")
+for (const m of (modelSource + qml).matchAll(/(?:icon|name): "([a-z0-9-]+)"/g)) assert.ok(Pixels[m[1]], "missing pixel icon " + m[1])
+for (const k of Object.keys(Model.KIND_GLYPHS).concat(["toaster"])) assert.ok(Pixels[Model.kindPixel(k)], k)
 
 // Contrast tells a usable red from a theme's muted one.
 {
@@ -122,8 +118,6 @@ for (const k of ["mouse", "keyboard", "headset", "laptop", "phone", "gaming-inpu
   assert.ok(Model.contrast(hex("#ed8796"), hex("#24273a")) > 3.5, "a real red")
 }
 
-// The JBL mark lives in Marks.js.
-assert.ok(Marks.fills.jbl)
 
 // Laptop
 const onBattery = { level: 64, status: "discharging", charging: false, acOnline: false, rateW: 12.34, timeToEmpty: 3 * 3600 + 5 * 60, timeToFull: null, energyWh: 36.6, energyFullWh: 57.2, energyDesignWh: 76, health: 75, cycles: 120, chargeLimit: 90, chargeStart: null, batteries: ["BAT0"] }
@@ -230,9 +224,6 @@ assert.strictEqual(Model.airpodsShown(null), false)
   assert.strictEqual(Model.barPickedText(2), "2 SHOWN")
 }
 
-assert.strictEqual(Model.airpodsVariant(podsFresh), "buds")
-assert.strictEqual(Model.airpodsVariant(Object.assign({}, podsFresh, { isPro: true })), "pro")
-assert.strictEqual(Model.airpodsVariant({ isHeadset: true }), "max")
 
 // The bar picker
 const mouse = wireless
@@ -249,7 +240,7 @@ assert.ok(quiet.filter(i => i.key !== "laptop-rate").every(i => i.text === ""))
 assert.strictEqual(quiet.find(i => i.key === "laptop-rate").text, "12 W")
 // Stale AirPods stay out of the bar.
 assert.ok(!Model.barItems(Object.assign({}, state, { airpods: podsKept }), opts).some(i => i.key === "airpods"))
-assert.strictEqual(Model.barItems(state, opts).find(i => i.key === "laptop").icon, "device-laptop")
+assert.strictEqual(Model.barItems(state, opts).find(i => i.key === "laptop").icon, "laptop")
 assert.strictEqual(Model.barItems(state, opts).find(i => i.key === "airpods").icon, "airpods")
 // The wave shows while on a charger, charging or not; a low mouse goes urgent.
 const barLaptop = lap => Model.barItems(Object.assign({}, state, { laptop: lap }), opts).find(i => i.key === "laptop")
@@ -335,7 +326,6 @@ assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
   assert.strictEqual(moves, 26)
 }
 
-console.log("model tests passed")
 
 // The AirPods icon waves while any part charges, not only the bud it shows.
 {
@@ -347,3 +337,226 @@ console.log("model tests passed")
   assert.strictEqual(Model.airpodsPowered({ isHeadset: true, headset: { level: 50, charging: true }, charging: true }), true)
   assert.strictEqual(Model.airpodsPowered(null), false)
 }
+
+// One bud in an ear, the other in the closed case: librepods drops the case
+// and that bud, and the panel keeps their last levels, each marked stale.
+{
+  const t0 = 1000000
+  const seen = Model.airpodsWithLastKnown(podsFresh, null, t0)
+  assert.strictEqual(seen.left.seenAt, t0)
+  const oneOut = Object.assign({}, podsFresh, { right: null, case: null, level: 80 })
+  const later = Model.airpodsWithLastKnown(oneOut, seen, t0 + 600)
+  assert.strictEqual(later.stale, false)
+  assert.strictEqual(later.left.stale, false)
+  assert.strictEqual(later.left.seenAt, t0 + 600)
+  assert.strictEqual(later.right.level, 70)
+  assert.strictEqual(later.right.stale, true)
+  assert.strictEqual(later.right.inEar, false)
+  assert.strictEqual(later.right.seenAt, t0)
+  assert.strictEqual(later["case"].level, 50)
+  assert.strictEqual(later["case"].charging, false)
+  assert.strictEqual(later.level, 80)
+  assert.strictEqual(Model.airpodsStatus(later), "Connected · in one ear · right bud in the case")
+  assert.strictEqual(Model.podPartState("right", later.right, t0 + 900), "in case · 15m ago")
+  assert.strictEqual(Model.podPartState("case", later["case"], t0 + 7300), "closed · 2h ago")
+  assert.strictEqual(Model.podPartState("left", later.left, t0 + 600), "in ear")
+  assert.strictEqual(Model.podPartState("case", null, t0), "not seen")
+  // A remembered part keeps the time it was last seen, poll after poll.
+  assert.strictEqual(Model.airpodsWithLastKnown(oneOut, later, t0 + 1200).right.seenAt, t0)
+  // Remembered parts stay out of the bar and the caption: only what answers counts.
+  const caseOn = Object.assign({}, opts, { airpodsCase: true })
+  assert.ok(!Model.barItems(Object.assign({}, state, { airpods: later }), caseOn).some(i => i.key === "airpods-case"))
+  assert.strictEqual(Model.barItems(Object.assign({}, state, { airpods: later }), caseOn).find(i => i.key === "airpods").text, "80%")
+  const lowCase = Object.assign({}, later, { "case": Object.assign({}, later["case"], { level: 5 }) })
+  assert.ok(!Model.heroPhrases({ airpods: lowCase, devices: [] }, 15)[0].includes("case"))
+  assert.ok(Model.tooltip({ airpods: later, devices: [] }).includes("Right 70% (last seen)"))
+  // Other AirPods do not inherit these levels.
+  assert.strictEqual(Model.airpodsWithLastKnown(Object.assign({}, oneOut, { name: "Other" }), later, t0).right, null)
+  // Both buds in the case and the case shut: everything is last seen.
+  const allGone = Model.airpodsWithLastKnown(podsGone, later, t0 + 2000)
+  assert.strictEqual(allGone.stale, true)
+  assert.strictEqual(allGone.level, 80)
+}
+assert.strictEqual(Model.ago(30), "just now")
+assert.strictEqual(Model.ago(59 * 60), "59m ago")
+assert.strictEqual(Model.ago(3 * 86400 + 5), "3d ago")
+
+// Tones come from the theme's palette by kind.
+assert.strictEqual(Model.kindTone("laptop"), "blue")
+assert.strictEqual(Model.kindTone("mouse"), "cyan")
+assert.strictEqual(Model.kindTone("airpods"), "magenta")
+assert.strictEqual(Model.kindTone("whatever"), "green")
+assert.deepStrictEqual(Model.parsePalette('mode = "dark"\nred = "#565d60"\n  blue="#798186"\nhyprland_active_border = "rgba(798186ee)"'), { red: "#565d60", blue: "#798186" })
+
+// Block digits: three rows, three columns a digit, one space between.
+assert.deepStrictEqual(Model.bigDigits("80"), ["█▀█ █▀█", "█▀█ █ █", "▀▀▀ ▀▀▀"])
+assert.deepStrictEqual(Model.bigDigits("x"), ["   ", "▀▀▀", "   "])
+for (const d of "0123456789") assert.ok(Model.bigDigits(d).every(r => [...r].length === 3), d)
+
+// A battery's cells: a tenth each, filled to the level.
+{
+  const fills = o => Model.batteryCells(Object.assign({ segments: 10 }, o)).map(c => Math.round(c.fill * 100) / 100)
+  assert.deepStrictEqual(fills({ level: 28 }), [1, 1, 0.8, 0, 0, 0, 0, 0, 0, 0])
+  assert.deepStrictEqual(fills({ level: 100 }), [1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
+  assert.deepStrictEqual(fills({ level: null }), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+  assert.deepStrictEqual(Model.batteryCells({ segments: 5, level: 50 }).map(c => c.fill), [1, 1, 0.5, 0, 0])
+  // At rest nothing glows, breathes or gives.
+  assert.ok(Model.batteryCells({ segments: 10, level: 60, t: 500 }).every(c => c.glow === 0 && c.next === 0 && c.press === 0))
+  // While charging, the cell being filled breathes and a pulse runs through the fill.
+  const charging = t => Model.batteryCells({ segments: 10, level: 28, charging: true, t: t })
+  assert.ok(charging(550).findIndex(c => c.next > 0) === 2)
+  assert.ok([100, 400, 700, 1000].some(t => charging(t).some(c => c.glow > 0)))
+  assert.ok(charging(400).slice(3).every(c => c.glow === 0))
+  // Full and charging: nothing left to breathe.
+  assert.ok(Model.batteryCells({ segments: 10, level: 100, charging: true, t: 550 }).every(c => c.next === 0))
+  // The pointer presses the cells under it, most in the middle.
+  const dent = Model.batteryCells({ segments: 10, level: 50, dent: 0.45 })
+  assert.strictEqual(dent[4].press, 1)
+  assert.ok(dent[3].press > 0 && dent[3].press < 1)
+  assert.strictEqual(dent[0].press, 0)
+  // A ripple lights a ring that travels out and fades.
+  const ring = age => Model.batteryCells({ segments: 10, level: 10, ripples: [{ x: 0.05, age: age }] }).map(c => c.glow)
+  assert.ok(ring(0)[0] > 0.5)
+  assert.ok(ring(300).indexOf(Math.max(...ring(300))) > 3)
+  assert.ok(ring(5000).every(g => g === 0))
+}
+
+// Icons act out their kind and always end where they began.
+assert.strictEqual(Model.storyOf("laptop"), "hop")
+assert.strictEqual(Model.storyOf("phone"), "buzz")
+assert.strictEqual(Model.storyOf("nothing"), "pop")
+for (const story of ["hop", "wiggle", "press", "tilt", "pulse", "shake", "buzz", "pop"]) {
+  for (const k of [0, 1]) assert.deepStrictEqual(Model.storyPose(story, k), { x: 0, y: 0 }, story)
+  // Whole pixels only, and every story moves somewhere along the way.
+  const poses = Array.from({ length: 49 }, (_, i) => Model.storyPose(story, (i + 1) / 50))
+  assert.ok(poses.every(p => Number.isInteger(p.x) && Number.isInteger(p.y)), story)
+  assert.ok(poses.some(p => p.x !== 0 || p.y !== 0), story + " moves")
+}
+
+// Decoding text keeps its length, spaces and separators, and ends as the text.
+{
+  const line = "Charging · 33m to 90%"
+  const mid = Model.scramble(line, 0.4, 3)
+  assert.strictEqual(mid.length, line.length)
+  assert.ok(mid.startsWith(line.slice(0, Math.floor(0.4 * line.length))))
+  assert.strictEqual(mid.charAt(9), "·")
+  assert.strictEqual(mid.split(" ").length, line.split(" ").length)
+  assert.notStrictEqual(mid, line)
+  assert.strictEqual(Model.scramble(line, 1, 3), line)
+  assert.strictEqual(Model.scramble("", 0.5, 1), "")
+}
+
+// An opened room offers its own bar switches.
+{
+  const picks = Model.barPicks({ laptop: onBattery, airpods: podsFresh, devices: [wireless] })
+  assert.deepStrictEqual(Model.roomPicks(picks, "laptop").map(p => p.key), ["barLaptop", "barLaptopRate", "barLaptopTime"])
+  assert.deepStrictEqual(Model.roomPicks(picks, "airpods").map(p => p.key), ["barAirpods", "barAirpodsCase"])
+  assert.deepStrictEqual(Model.roomPicks(picks, wireless.id).map(p => p.device.id), [wireless.id])
+  assert.ok(picks.every(p => p.inRoom.includes("in the bar")))
+  assert.deepStrictEqual(Model.roomPicks(picks, "nothing"), [])
+}
+
+// A device room's details say what it is and what reads it.
+assert.deepStrictEqual(Model.deviceFacts(Object.assign({}, wireless, { source: "glorious" })), [
+  { label: "State", value: "On battery" },
+  { label: "Link", value: "2.4 GHz" },
+  { label: "Kind", value: "Mouse" },
+  { label: "Read by", value: "Glorious dongle" }
+])
+assert.ok(Model.deviceFacts(Object.assign({}, wireless, { source: "upower" })).some(f => f.value === "UPower"))
+assert.ok(Model.deviceFacts(Object.assign({}, wireless, { stale: true })).some(f => f.value === "last one seen"))
+assert.deepStrictEqual(Model.airpodsFacts(podsFresh)[0], { label: "Model", value: "AirPods Pro 2 (USB-C)" })
+
+// Marks are icons from the bar's own set.
+assert.strictEqual(Model.markIcon({ level: 10, charging: false }, 20), "battery-low")
+assert.strictEqual(Model.markIcon({ level: 10, charging: true }, 20), "zap")
+assert.strictEqual(Model.markIcon({ level: 90, charging: false, acOnline: true }, 20), "plug")
+assert.strictEqual(Model.markIcon({ level: 90, charging: true, stale: true }, 20), "")
+assert.strictEqual(Model.markIcon(null, 20), "")
+// The panel's pixel icons: every kind, mark and kit glyph has one.
+{
+  const pixelSource = fs.readFileSync(path.join(__dirname, "..", "Pixels.js"), "utf8").replace(/^\.pragma library\s*/, "")
+  const Pixels = new Function(pixelSource + "\nreturn icons")()
+  for (const name of ["battery-low", "zap", "plug", "chevron-down", "airpods", "airpods-case"]) assert.ok(Pixels[name], "missing pixel icon " + name)
+  for (const kind of Object.keys(Model.KIND_GLYPHS)) assert.ok(Pixels[Model.kindPixel(kind)], "no pixel icon for " + kind)
+  for (const key of Object.keys(Model.GLYPHS)) assert.ok(Pixels[Model.pixelFor(Model.GLYPHS[key])], "no pixel icon for GLYPHS." + key)
+  assert.ok(Pixels[Model.pixelFor("\u{F012C}")], "the updater's done")
+  assert.strictEqual(Model.pixelFor("x"), "")
+  for (const [name, art] of Object.entries(Pixels)) {
+    assert.ok(art.g24.every(r => r.every(v => Number.isInteger(v)) && r[0] + r[2] <= 24 && r[1] + r[3] <= 24), name)
+    assert.ok(art.g12.length > 0 && art.g12.every(r => r[0] + r[2] <= 12 && r[1] + r[3] <= 12), name)
+  }
+  // Panel.qml names its pixel icons outright; each must exist.
+  const panel = fs.readFileSync(path.join(__dirname, "..", "Panel.qml"), "utf8")
+  for (const m of panel.matchAll(/(?:pixel|icon): "([a-z0-9-]+)"/g)) assert.ok(Pixels[m[1]], "missing pixel icon " + m[1])
+}
+
+// The bar's pixel type: the panel's digits a column wider, the %, and the
+// letters it writes.
+{
+  for (const ch of "023456789") {
+    const rows = Model.bigDigits(ch)
+    const glyph = Model.PIXEL_FONT[ch]
+    assert.strictEqual(glyph.length, 5, ch)
+    assert.ok(glyph.every(r => r.length === 4), ch)
+    // Drop the doubled column and it is the face: each cell a half row, █ and
+    // ▀ lighting the top, █ and ▄ the bottom.
+    const narrow = glyph.map(r => r[0] + r[1] + r[3])
+    for (let c = 0; c < 3; c++) {
+      assert.strictEqual(narrow[0][c] === "#", "█▀".includes(rows[0][c]), ch)
+      assert.strictEqual(narrow[3][c] === "#", "█▄".includes(rows[1][c]), ch)
+    }
+    // The inside of every digit is two pixels wide where it has one.
+    assert.ok(glyph.every(r => r[1] === r[2]), ch)
+  }
+  // The sevens and fours reach the baseline like every other digit.
+  assert.strictEqual(Model.PIXEL_FONT["4"][4], "...#")
+  assert.strictEqual(Model.PIXEL_FONT["7"][4], "...#")
+  const line = Model.pixelText("72%")
+  assert.strictEqual(line.width, 4 + 1 + 4 + 1 + 5)
+  assert.strictEqual(line.height, 5)
+  assert.ok(line.rects.every(r => r[0] + r[2] <= line.width && r[1] < 5))
+  // What the bar can write, it can draw.
+  for (const text of ["12 W", "6.4 W", "3h 05m", "45m", "zZ", "--", "100%"]) {
+    for (const ch of text) assert.ok(Model.PIXEL_FONT[ch], "no pixel glyph for " + JSON.stringify(ch))
+  }
+}
+
+// Room tones: the theme's colour when it is one, the kind's own hue where the
+// theme's is a grey, softened toward the text either way.
+{
+  const fg = "#cacccc"
+  const solitude = Model.roomToneHex("blue", { blue: "#798186" }, fg)
+  const tokyo = Model.roomToneHex("blue", { blue: "#7aa2f7" }, "#c0caf5")
+  assert.notStrictEqual(solitude, "#798186")
+  assert.ok(/^#[0-9a-f]{6}$/.test(solitude) && /^#[0-9a-f]{6}$/.test(tokyo))
+  // Solitude's grey blue gives way to a real blue: more blue than red.
+  assert.ok(parseInt(solitude.slice(5, 7), 16) > parseInt(solitude.slice(1, 3), 16) + 40, solitude)
+  // A themed colour keeps its own hue.
+  assert.ok(parseInt(tokyo.slice(5, 7), 16) > parseInt(tokyo.slice(1, 3), 16), tokyo)
+  assert.ok(/^#[0-9a-f]{6}$/.test(Model.roomToneHex("magenta", {}, fg)))
+  assert.ok(/^#[0-9a-f]{6}$/.test(Model.roomToneHex("nothing", null, "bad")))
+}
+
+// The bar's hover card: a line per battery, a part of the AirPods each.
+{
+  const t0 = 2000000
+  const seen = Model.airpodsWithLastKnown(podsFresh, null, t0)
+  const oneOut = Model.airpodsWithLastKnown(Object.assign({}, podsFresh, { right: null, case: null, level: 80 }), seen, t0 + 600)
+  const rows = Model.hoverRows({ laptop: onBattery, airpods: oneOut, devices: [wireless] }, t0 + 900)
+  assert.deepStrictEqual(rows.map(r => r.key), ["laptop", "airpods-left", "airpods-right", "airpods-case", wireless.id])
+  assert.deepStrictEqual(rows.map(r => r.icon), ["laptop", "airpods", "airpods", "airpods-case", "mouse"])
+  const right = rows.find(r => r.key === "airpods-right")
+  assert.strictEqual(right.stale, true)
+  assert.strictEqual(right.note, "in case 15m")
+  assert.strictEqual(rows.find(r => r.key === "airpods-case").note, "closed 15m")
+  assert.strictEqual(rows.find(r => r.key === "airpods-left").note, "")
+  assert.strictEqual(rows[0].tone, "blue")
+  // AirPods that are not connected stay out, as in the panel.
+  assert.ok(!Model.hoverRows({ airpods: Object.assign({}, oneOut, { connected: false }), devices: [] }).length)
+  // A device asleep with no level still gets its line.
+  assert.strictEqual(Model.hoverRows({ devices: [asleep] })[0].note, "asleep")
+  assert.deepStrictEqual(Model.hoverRows(null), [])
+}
+
+console.log("model tests passed")
