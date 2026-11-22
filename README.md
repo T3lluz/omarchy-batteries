@@ -4,7 +4,7 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.8.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.9.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
@@ -28,7 +28,7 @@
 - **Devices:** one room per peripheral (mouse, keyboard, speaker, headphones, controller, phone, tablet and more), with its level, its battery, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
 - **At a glance:** the prompt line under the panel's title types out what is worth knowing, like how long the laptop has left and which battery is lowest, and takes turns between them. Anything low holds that line still.
 - **Live:** plugging a cable or the charger in or out refreshes within a second or two (it listens to udev), as does any change librepods reports for your AirPods.
-- **Low battery:** one notification when a peripheral or your AirPods drop below the threshold. The laptop keeps Omarchy's own warning.
+- **Low battery:** one notification when a peripheral or your AirPods drop below the threshold, with a pixel badge of the device and its battery. Click it to open the panel. Plug the device in and the same notification says thanks and goes. The laptop keeps Omarchy's own warning.
 - **Updates from the panel:** Settings says when a new version is on GitHub and installs it with one click. Edits you made in the plugin folder are kept in `git stash`, not lost.
 - **Every monitor agrees:** the bar draws the widget once per screen; they share one poller and read their settings straight from `shell.json`, so a choice made on one screen shows on all of them and survives a restart.
 - Every icon, in the bar and the panel, is pixel art from one set, [Pixelarticons](https://pixelarticons.com), with AirPods and their case drawn to match. Icons and figures are drawn on whole screen pixels, never scaled, so they stay sharp at any display scale. The rooms take colours from your theme (or, where its palette is greys, each kind's own soft hue); the bar keeps the bar's colours.

@@ -356,5 +356,48 @@ class PhoneTest(unittest.TestCase):
                          {"BatteryCurrentCapacity": "77", "BatteryIsCharging": "true"})
 
 
+class Badge(unittest.TestCase):
+    """The low-battery notification's picture."""
+
+    def test_reads_icons_from_pixels_js(self):
+        icon = pb.pixel_icon("mouse")
+        self.assertIsNotNone(icon)
+        self.assertTrue(all(len(r) == 4 for r in icon["g24"] + icon["g12"]))
+        self.assertIsNone(pb.pixel_icon("no-such-icon"))
+        # Every kind of device the panel draws has its icon there.
+        for name in ("laptop", "airpods", "airpods-case", "headphone", "gamepad", "keyboard", "smartphone", "battery-medium"):
+            self.assertIsNotNone(pb.pixel_icon(name), name)
+
+    def test_hex(self):
+        self.assertEqual(pb.hex_rgb("#7fc8d8"), (0x7F, 0xC8, 0xD8))
+        self.assertEqual(pb.hex_rgb("#ff7fc8d8"), (0x7F, 0xC8, 0xD8))
+        self.assertEqual(pb.hex_rgb("nonsense"), (255, 255, 255))
+
+    def test_png_is_sharp_and_fills_the_level(self):
+        size = 46
+        rows = pb.badge_pixels(size, pb.pixel_icon("mouse"), 60, (200, 100, 50))
+        self.assertEqual(len(rows), size)
+        alphas = {rows[y][x * 4 + 3] for y in range(size) for x in range(size)}
+        # The tile, the battery's track and outline, and solid pixels: no
+        # smoothed edges in between.
+        self.assertEqual(alphas, {36, 63, 167, 255})
+        # 60% of five cells: three full, the fourth and fifth on the track.
+        u = size // 20
+        top = (size - 20 * u) // 2
+        bx, cy = (size - 18 * u) // 2, top + 16 * u
+        solid = [rows[cy][(bx + 2 * u + n * 3 * u) * 4 + 3] == 255 for n in range(5)]
+        self.assertEqual(solid, [True, True, True, False, False])
+
+    def test_writes_a_png(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "alerts", "mouse-low.png")
+            self.assertEqual(pb.cmd_badge([out, "46", "mouse", "12", "#ffffff"]), 0)
+            with open(out, "rb") as f:
+                data = f.read()
+            self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+            self.assertEqual(data[16:24], (46).to_bytes(4, "big") * 2)
+            self.assertEqual(pb.cmd_badge([out, "46"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

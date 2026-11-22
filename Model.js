@@ -206,8 +206,19 @@ function airpodsWithLastKnown(pods, previous, nowSec) {
   var out = copy(pods)
   var same = !!previous && previous.name === pods.name
   var fresh = 0, kept = 0
+  // The buds hear the case only while one of them sits in it. With every bud
+  // in an ear, what they report for the case is what it said when they left
+  // it, charger and all, so the case is last seen rather than live.
+  var caseAway = caseOutOfReach(pods)
   POD_PARTS.forEach(function(k) {
-    if (pods[k]) {
+    if (k === "case" && caseAway) {
+      var was = same && previous["case"] && hasLevel(previous["case"].level) ? previous["case"] : null
+      out[k] = copy(pods[k])
+      out[k].stale = true
+      out[k].charging = false
+      out[k].seenAt = was && was.seenAt ? was.seenAt : Math.round(now)
+      kept++
+    } else if (pods[k]) {
       out[k] = copy(pods[k])
       out[k].stale = false
       out[k].seenAt = Math.round(now)
@@ -230,6 +241,12 @@ function airpodsWithLastKnown(pods, previous, nowSec) {
   }
   out.known = fresh + kept > 0
   return out
+}
+
+function caseOutOfReach(pods) {
+  if (pods.isHeadset || !pods["case"]) return false
+  var buds = [pods.left, pods.right].filter(Boolean)
+  return buds.length > 0 && buds.every(function(b) { return b.inEar === true })
 }
 
 function emptierBud(pods) {
@@ -661,6 +678,41 @@ function alertables(state) {
   if (pods && pods.known && !pods.stale && hasLevel(pods.level))
     list.push({ id: "airpods", name: pods.name, kind: "airpods", level: pods.level, charging: pods.charging, stale: false })
   return list
+}
+
+// A low-battery alert, sent as a real notification so it takes its place in
+// the shell's stack, its history and Do Not Disturb. Its picture is a badge
+// in the panel's look (`bin/batteries badge`): the room's icon over a small
+// battery at the level, in the low colour.
+function alertNote(device) {
+  var label = device.kind === "airpods" ? "AirPods" : kindLabel(device.kind)
+  var name = device.name || label
+  return {
+    key: String(device.id),
+    icon: kindPixel(device.kind),
+    tone: kindTone(device.kind),
+    title: label + " battery low",
+    body: name + " is at " + percent(device.level) + ". Plug it in.",
+    level: hasLevel(device.level) ? Math.round(device.level) : 0,
+    // What the same notification says once the device is plugged in.
+    chargingTitle: label + " charging",
+    chargingBody: name + " is charging. Thanks."
+  }
+}
+
+// What became of an alert since it went up: "low" still, "charging" once it
+// is plugged in, "fine" back above the threshold, "gone" when it stopped
+// answering.
+function alertState(key, state, threshold) {
+  var list = alertables(state || {})
+  for (var i = 0; i < list.length; i++) {
+    var d = list[i]
+    if (String(d.id) !== String(key)) continue
+    if (d.stale) return { state: "gone", level: d.level }
+    if (d.charging) return { state: "charging", level: d.level }
+    return { state: isLow(d, threshold) ? "low" : "fine", level: d.level }
+  }
+  return { state: "gone", level: null }
 }
 
 function tooltip(state) {

@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, storyOf, storyPose, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows }")()
+const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, storyOf, storyPose, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -377,6 +377,31 @@ assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
   assert.strictEqual(allGone.stale, true)
   assert.strictEqual(allGone.level, 80)
 }
+// Both buds in ears: the case is out of their reach, so what they report for
+// it (charging, from when they left it) is last seen, not live.
+{
+  const t0 = 2000000
+  const worn = Model.airpodsWithLastKnown(podsFresh, null, t0)
+  assert.strictEqual(worn["case"].stale, true)
+  assert.strictEqual(worn["case"].charging, false)
+  assert.strictEqual(worn["case"].level, 50)
+  assert.strictEqual(Model.podPartState("case", worn["case"], t0 + 300), "closed · 5m ago")
+  assert.strictEqual(Model.airpodsPowered(worn), false)
+  // One bud out of its ear (in the open case, or about to be): the case is live.
+  const out = Object.assign({}, podsFresh, { right: { level: 70, charging: true, inEar: false } })
+  const open = Model.airpodsWithLastKnown(out, worn, t0 + 600)
+  assert.strictEqual(open["case"].stale, false)
+  assert.strictEqual(open["case"].charging, true)
+  // Back in both ears: the case keeps the time it was last live.
+  const back = Model.airpodsWithLastKnown(podsFresh, open, t0 + 900)
+  assert.strictEqual(back["case"].stale, true)
+  assert.strictEqual(back["case"].seenAt, t0 + 600)
+  const caseOn = Object.assign({}, opts, { airpodsCase: true })
+  assert.ok(!Model.barItems(Object.assign({}, state, { airpods: back }), caseOn).some(i => i.key === "airpods-case"))
+  // A headset has no case to lose.
+  const headset = Model.airpodsWithLastKnown({ name: "Max", isHeadset: true, headset: { level: 60, charging: false }, left: null, right: null, case: null, level: 60 }, null, t0)
+  assert.strictEqual(headset.headset.stale, false)
+}
 assert.strictEqual(Model.ago(30), "just now")
 assert.strictEqual(Model.ago(59 * 60), "59m ago")
 assert.strictEqual(Model.ago(3 * 86400 + 5), "3d ago")
@@ -560,3 +585,24 @@ assert.strictEqual(Model.markIcon(null, 20), "")
 }
 
 console.log("model tests passed")
+
+// A low-battery alert as a notification, and what became of it.
+{
+  const mouse = { id: "hid-1", name: "Glorious Model O", kind: "mouse", level: 12, charging: false, stale: false }
+  const note = Model.alertNote(mouse)
+  assert.strictEqual(note.key, "hid-1")
+  assert.strictEqual(note.title, "Mouse battery low")
+  assert.strictEqual(note.body, "Glorious Model O is at 12%. Plug it in.")
+  assert.strictEqual(note.chargingTitle, "Mouse charging")
+  assert.strictEqual(note.level, 12)
+  assert.strictEqual(note.icon, Model.kindPixel("mouse"))
+  assert.strictEqual(note.tone, Model.kindTone("mouse"))
+  assert.strictEqual(Model.alertNote({ id: "airpods", name: "AirPods Pro", kind: "airpods", level: 9 }).title, "AirPods battery low")
+  const at = devices => ({ laptop: null, airpods: null, devices })
+  assert.strictEqual(Model.alertState("hid-1", at([mouse]), 20).state, "low")
+  assert.strictEqual(Model.alertState("hid-1", at([Object.assign({}, mouse, { charging: true, level: 13 })]), 20).state, "charging")
+  assert.strictEqual(Model.alertState("hid-1", at([Object.assign({}, mouse, { level: 40 })]), 20).state, "fine")
+  assert.strictEqual(Model.alertState("hid-1", at([Object.assign({}, mouse, { stale: true })]), 20).state, "gone")
+  assert.strictEqual(Model.alertState("hid-1", at([]), 20).state, "gone")
+}
+console.log("alert tests passed")

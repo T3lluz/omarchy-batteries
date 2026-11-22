@@ -31,6 +31,10 @@ Usage:
   batteries [probe]       JSON for the bar widget
   batteries list          human readable
   batteries install-udev  (as root) grant the seat user hidraw access
+  batteries badge OUT SIZE ICON LEVEL TONE
+                          the picture a low-battery notification carries: the
+                          pixel icon ICON over a small battery at LEVEL, in TONE
+                          (#rrggbb), SIZE device pixels square, as a PNG
 """
 
 from __future__ import annotations
@@ -48,6 +52,7 @@ import subprocess
 import sys
 import time
 import uuid
+import zlib
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 UDEV_RULES = os.path.join(HERE, "..", "udev", "70-omarchy-batteries.rules")
@@ -981,6 +986,116 @@ def cmd_install_udev() -> int:
     return 0
 
 
+# ------------------------------------------------------------ the badge
+#
+# The picture a low-battery notification carries, in the panel's look: the
+# room's pixel icon (Pixels.js) over a small battery of five cells, on a
+# faint tile of the room's colour. Drawn for the screen's exact scale, a whole
+# number of device pixels per cell, so the shell shows it sharp.
+
+PIXELS_JS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "Pixels.js")
+
+
+def pixel_icon(name: str, path: str = PIXELS_JS) -> dict | None:
+    """One icon's rectangles from Pixels.js: {"g24": [...], "g12": [...]}."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return None
+    m = re.search(r'"' + re.escape(name) + r'":\s*\{\s*g24:\s*(\[.*?\]\]),\s*g12:\s*(\[.*?\]\])\s*\}', text)
+    if not m:
+        return None
+    return {"g24": json.loads(m.group(1)), "g12": json.loads(m.group(2))}
+
+
+def hex_rgb(value: str) -> tuple[int, int, int]:
+    v = value.strip().lstrip("#")
+    if len(v) == 8:  # Qt's #aarrggbb
+        v = v[2:]
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", v):
+        return (255, 255, 255)
+    return (int(v[0:2], 16), int(v[2:4], 16), int(v[4:6], 16))
+
+
+def badge_pixels(size: int, icon: dict | None, level: float, rgb: tuple[int, int, int]) -> list[bytearray]:
+    """RGBA rows. The layout is in units of `u` device pixels: the icon 12
+    units square, two under it, then the battery 18 by 6."""
+    size = max(12, min(512, int(size)))
+    u = max(1, size // 20)
+    rows = [bytearray(size * 4) for _ in range(size)]
+
+    def fill(x: int, y: int, w: int, h: int, alpha: float) -> None:
+        a = max(0, min(255, round(alpha * 255)))
+        for yy in range(max(0, y), min(size, y + h)):
+            row = rows[yy]
+            for xx in range(max(0, x), min(size, x + w)):
+                i = xx * 4
+                # Over what is there (the tile), source-over in straight alpha.
+                da = row[i + 3] / 255
+                sa = a / 255
+                oa = sa + da * (1 - sa)
+                if oa <= 0:
+                    continue
+                for c in range(3):
+                    row[i + c] = round((rgb[c] * sa + row[i + c] * da * (1 - sa)) / oa)
+                row[i + 3] = round(oa * 255)
+
+    fill(0, 0, size, size, 0.14)
+    top = (size - 20 * u) // 2
+    # The icon: the 24 grid at half a unit a cell where a unit is even, else the 12.
+    if icon:
+        fine = u % 2 == 0
+        cell = u // 2 if fine else u
+        ix = (size - 12 * u) // 2
+        for x, y, w, h in icon["g24" if fine else "g12"]:
+            fill(ix + x * cell, top + y * cell, w * cell, h * cell, 1)
+    # The battery: a one-unit outline, a unit inside it, five cells two units
+    # square a unit apart, filled to the level.
+    bx, by = (size - 18 * u) // 2, top + 14 * u
+    fill(bx, by, 18 * u, u, 0.6)
+    fill(bx, by + 5 * u, 18 * u, u, 0.6)
+    fill(bx, by + u, u, 4 * u, 0.6)
+    fill(bx + 17 * u, by + u, u, 4 * u, 0.6)
+    full = max(0.0, min(100.0, float(level))) / 100 * 5
+    for n in range(5):
+        cx = bx + 2 * u + n * 3 * u
+        fill(cx, by + 2 * u, 2 * u, 2 * u, 0.12)
+        part = max(0.0, min(1.0, full - n))
+        if part > 0:
+            fill(cx, by + 2 * u, max(1, round(part * 2 * u)), 2 * u, 1)
+    return rows
+
+
+def png(rows: list[bytearray]) -> bytes:
+    h = len(rows)
+    w = len(rows[0]) // 4 if rows else 0
+    raw = b"".join(b"\x00" + bytes(r) for r in rows)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
+def cmd_badge(args: list[str]) -> int:
+    if len(args) != 5:
+        print("usage: batteries badge OUT SIZE ICON LEVEL TONE", file=sys.stderr)
+        return 2
+    out, size, name, level, tone = args
+    try:
+        rows = badge_pixels(int(float(size)), pixel_icon(name), float(level), hex_rgb(tone))
+    except ValueError:
+        return 2
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    tmp = out + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(png(rows))
+    os.replace(tmp, out)
+    return 0
+
+
 def main(argv: list[str]) -> int:
     cmd = argv[1] if len(argv) > 1 else "probe"
     if cmd == "probe":
@@ -990,6 +1105,8 @@ def main(argv: list[str]) -> int:
         return cmd_list()
     if cmd == "install-udev":
         return cmd_install_udev()
+    if cmd == "badge":
+        return cmd_badge(argv[2:])
     print(__doc__.strip(), file=sys.stderr)
     return 2
 

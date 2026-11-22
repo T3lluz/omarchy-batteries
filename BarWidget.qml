@@ -150,6 +150,14 @@ BarWidget {
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "notifyLow"; value: root.notifyLow }
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "autoUpdateCheck"; value: setting("autoUpdateCheck", true) === true }
   Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client; property: "liveBar"; value: root.barOptions.laptopRate || root.barOptions.laptopTime }
+  // The colours of the low-battery notification's badge: the panel's room
+  // colours, the low one while low.
+  Binding { restoreMode: Binding.RestoreNone; target: root.client; when: !!root.client && root.isLeader; property: "toneHost"; value: root }
+  function alertTone(name, low) {
+    var panel = panelLoader.item
+    if (!panel) return low ? root.urgent : root.barFg
+    return low ? panel.lowTone : panel.toneOf(name)
+  }
 
   Loader {
     id: panelLoader
@@ -177,6 +185,13 @@ BarWidget {
       root.summon("summon")
     }
     function refresh(): string { root.refresh(); return "ok" }
+    // The low-battery notification on a made-up level: it goes low, and a
+    // few seconds later it is plugged in.
+    function previewAlert(): string {
+      if (!root.client) return "loading"
+      root.client.previewAlert()
+      return "ok"
+    }
     function status(): string {
       var c = root.client
       return JSON.stringify({

@@ -1,6 +1,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
+import qs.Commons
 import "Model.js" as Model
 
 // Owns polling and state. All reading happens in bin/batteries; this side
@@ -102,11 +104,145 @@ Item {
     var low = Model.lowBatteryAlerts(Model.alertables(root.state), lowThreshold, persisted.notified || {})
     persisted.notified = low.notified
     if (notifyLow) {
-      for (var i = 0; i < low.alerts.length; i++) {
-        var d = low.alerts[i]
-        Quickshell.execDetached(["notify-send", "-u", "critical", "-a", "Batteries",
-          "-i", "battery-caution", (d.kind === "airpods" ? "AirPods" : Model.kindLabel(d.kind)) + " battery low",
-          d.name + " is at " + Model.percent(d.level) + ". Plug it in."])
+      for (var i = 0; i < low.alerts.length; i++) sendAlert(low.alerts[i], false)
+    }
+    followAlerts()
+  }
+
+  // ------------------------------------------------------------- alerts
+
+  // A battery that goes low gets a real notification, so it takes its place
+  // in the shell's stack and history and keeps to Do Not Disturb, dressed in
+  // the panel's look: its picture is a pixel badge (`bin/batteries badge`)
+  // drawn for the focused screen's scale, and a click opens the panel. The
+  // notification follows the battery: plugged in, the same card turns to
+  // its thanks in the room's colour and goes; back above the line or out of
+  // reach, it is withdrawn.
+
+  // The bar widget that knows the room colours (its alertTone).
+  property var toneHost: null
+  // Device id -> its notice, while its notification is up.
+  property var notices: ({})
+
+  function sendAlert(device, preview) {
+    if (notices[device.id]) return
+    var notice = noticeComponent.createObject(root, { note: Model.alertNote(device), preview: !!preview })
+    var next = Object.assign({}, notices)
+    next[device.id] = notice
+    notices = next
+  }
+
+  function followAlerts() {
+    for (var id in notices) {
+      var n = notices[id]
+      if (!n || n.preview || n.answered) continue
+      var now = Model.alertState(id, root.state, lowThreshold)
+      if (now.state === "charging") n.thank(now.level)
+      else if (now.state !== "low") n.withdraw()
+    }
+  }
+
+  function forget(id, notice) {
+    if (notices[id] !== notice) return
+    var next = Object.assign({}, notices)
+    delete next[id]
+    notices = next
+  }
+
+  // The shell draws a sender's picture in a slot 40 wide; at the focused
+  // screen's scale, a whole number of device pixels, so it stays sharp.
+  function badgeSize() {
+    var m = Hyprland.focusedMonitor
+    var scale = m && m.scale > 0 ? m.scale : 1
+    return Math.round(Style.space(40) * scale)
+  }
+
+  function toneHex(name, low) {
+    var c = toneHost && typeof toneHost.alertTone === "function" ? toneHost.alertTone(name, low) : null
+    return c ? String(c) : "#ffffff"
+  }
+
+  // The notification as the panel would show it, on a made-up level: it goes
+  // low, and after a few seconds it is plugged in.
+  function previewAlert() {
+    var real = Model.alertables(root.state).filter(function(d) { return Model.hasLevel(d.level) })[0]
+    var old = notices["preview"]
+    if (old) old.withdraw()
+    forget("preview", old)
+    sendAlert({ id: "preview", name: real ? real.name : "Wireless mouse", kind: real ? real.kind : "mouse", level: 12 }, true)
+  }
+
+  Component {
+    id: noticeComponent
+
+    Item {
+      id: notice
+      visible: false
+
+      property var note: ({})
+      property bool preview: false
+      // The notification's id, once the shell has it.
+      property string nid: ""
+      property bool answered: false
+      property bool thanked: false
+
+      readonly property string base: root.historyDir + "/alerts/" + String(note.key).replace(/[^A-Za-z0-9_-]/g, "_")
+      readonly property string openArgv: JSON.stringify(["omarchy-shell", "io.github.t3lluz.batteries", "open"])
+
+      // Draws the badge, then sends it; --wait keeps this running until the
+      // notification closes, which is how the notice knows it is gone.
+      readonly property string sendScript: 'python3 -B "$1" badge "$2" "$3" "$4" "$5" "$6"; img="$2"; [ -s "$img" ] || img=battery-caution; '
+        + 'exec notify-send -p --wait -a Batteries -u critical -i "$img" -h "string:omarchy-exec-argv:$7" -- "$8" "$9"'
+      readonly property string thankScript: 'python3 -B "$1" badge "$2" "$3" "$4" "$5" "$6"; img="$2"; [ -s "$img" ] || img=battery-good-charging; '
+        + 'exec notify-send -r "${10}" -a Batteries -u normal -t 5000 -h boolean:transient:true -i "$img" -h "string:omarchy-exec-argv:$7" -- "$8" "$9"'
+
+      function thank(level) {
+        if (answered || !nid) return
+        answered = true
+        thanked = true
+        thanker.command = ["sh", "-c", thankScript, "batteries-alert", root.scriptPath, base + "-charging.png", String(root.badgeSize()),
+                           note.icon, String(Model.hasLevel(level) ? Math.round(level) : note.level), root.toneHex(note.tone, false),
+                           openArgv, note.chargingTitle, note.chargingBody, nid]
+        thanker.running = true
+      }
+
+      function withdraw() {
+        if (answered) return
+        answered = true
+        if (!nid) return
+        closer.command = ["gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
+                          "--object-path", "/org/freedesktop/Notifications",
+                          "--method", "org.freedesktop.Notifications.CloseNotification", nid]
+        closer.running = true
+      }
+
+      Process {
+        id: sender
+        stdout: SplitParser {
+          onRead: function(line) {
+            var id = String(line).trim()
+            if (!notice.nid && /^[0-9]+$/.test(id)) notice.nid = id
+          }
+        }
+        onExited: {
+          root.forget(notice.note.key, notice)
+          notice.destroy(1000)
+        }
+      }
+
+      Process { id: thanker }
+      Process { id: closer }
+
+      Timer {
+        interval: 6000
+        running: notice.preview && notice.nid !== ""
+        onTriggered: notice.thank(13)
+      }
+
+      Component.onCompleted: {
+        sender.command = ["sh", "-c", sendScript, "batteries-alert", root.scriptPath, base + "-low.png", String(root.badgeSize()),
+                          note.icon, String(note.level), root.toneHex(note.tone, true), openArgv, note.title, note.body]
+        sender.running = true
       }
     }
   }
