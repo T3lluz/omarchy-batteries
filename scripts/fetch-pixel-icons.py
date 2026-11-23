@@ -70,6 +70,95 @@ CUSTOM = {
 }
 
 
+# The parts of an icon that move on their own (Motion.js acts them out), as
+# boxes on the 12-cell grid, (col0, row0, col1, row1) inclusive. "*" is the
+# whole icon. A pixel in no part is the still base. The first part that
+# claims a pixel keeps it.
+PARTS = {
+    "mouse": [("wheel", [(5, 3, 5, 4)])],
+    "keyboard": [
+        ("k2", [(4, 3, 4, 3)]), ("k3", [(6, 3, 6, 3)]), ("k5", [(3, 5, 3, 5)]), ("k7", [(7, 5, 7, 5)]),
+        ("space", [(3, 7, 8, 7)]),
+    ],
+    "headphone": [("cupL", [(0, 6, 5, 9)]), ("cupR", [(6, 6, 11, 9)])],
+    "volume-2": [("inner", [(7, 5, 7, 6)]), ("outer", [(7, 3, 9, 3), (9, 4, 9, 7), (7, 8, 9, 8)])],
+    "gamepad": [("dpad", [(3, 4, 5, 6)]), ("btnA", [(7, 4, 7, 4)]), ("btnB", [(8, 6, 8, 6)])],
+    "hand": [("hand", "*")],
+    "tablet": [("home", [(5, 8, 5, 8)])],
+    "pencil": [("pencil", "*")],
+    "smartphone": [("phone", "*")],
+    "music": [("notes", "*")],
+    "power": [("stem", [(5, 1, 5, 4)])],
+    "battery": [("nub", [(10, 4, 10, 6)])],
+    "battery-low": [("c1", [(3, 4, 3, 6)])],
+    "battery-medium": [("c1", [(3, 4, 3, 6)]), ("c2", [(5, 4, 5, 6)])],
+    "battery-full": [("c1", [(3, 4, 3, 6)]), ("c2", [(5, 4, 5, 6)]), ("c3", [(7, 4, 7, 6)])],
+    "zap": [("top", [(0, 0, 11, 3)]), ("mid", [(0, 4, 11, 6)]), ("bot", [(0, 7, 11, 11)])],
+    "plug": [("head", [(0, 0, 11, 8)])],
+    "settings-cog": [("hub", [(4, 4, 7, 7)])],
+    "arrow-left": [("arrow", "*")],
+    "key": [("teeth", [(5, 6, 9, 7)]), ("bow", "*")],
+    "warning-diamond": [("mark", [(5, 3, 5, 5), (5, 7, 5, 7)])],
+    "layout": [("bar", [(1, 4, 10, 4)])],
+    "bell": [("skirt", [(0, 4, 11, 7)]), ("clapper", [(0, 9, 11, 10)])],
+    "percent": [("o1", [(2, 2, 5, 5)]), ("o2", [(6, 6, 9, 9)])],
+    "clock": [("hand", [(5, 3, 5, 5)])],
+    "download": [("arrow", [(3, 1, 7, 6)])],
+    "check": [("short", [(2, 6, 4, 8)]), ("long", [(5, 3, 9, 7)])],
+    "airpods": [("budL", [(0, 0, 5, 11)]), ("budR", [(6, 0, 11, 11)])],
+    "airpods-case": [("lid", [(0, 0, 11, 4)]), ("light", [(5, 7, 6, 7)])],
+}
+
+# Pixels an icon shows only while it acts: 12-cell drawings, or rectangles
+# on the 24-unit grid where a cell's odd unit would sit off centre.
+EXTRAS = {
+    "laptop": [
+        ("prompt", [
+            "............",
+            "............",
+            "............",
+            "...#........",
+            "....#.......",
+            "...#........",
+        ]),
+        ("cursor", [
+            "............",
+            "............",
+            "............",
+            "............",
+            "............",
+            ".....##.....",
+        ]),
+    ],
+    "tablet": [("swipe", [
+        "............",
+        "............",
+        "............",
+        "..#.........",
+        "..#.........",
+        "..#.........",
+        "..#.........",
+    ])],
+    "tv": [("scan", [
+        "............",
+        "............",
+        "............",
+        "..########..",
+    ])],
+    "pencil": [
+        ("ink1", ["", "", "", "", "", "", "", "", "", "", "", ".#.........."]),
+        ("ink2", ["", "", "", "", "", "", "", "", "", "", "", "..#........."]),
+    ],
+    "clock": [
+        ("right", ["", "", "", "", "", ".....####..."]),
+        ("down", ["", "", "", "", "", ".....#......", ".....#......", ".....#......", ".....#......"]),
+        ("left", ["", "", "", "", "", "..####......"]),
+    ],
+    # The hub pressed in: its hole filled.
+    "settings-cog": [("pressed", [[10, 10, 4, 4]])],
+}
+
+
 def polygons(d):
     """Rectilinear subpaths of an SVG path (M, H, V, L, h, v, l, m, Z)."""
     tokens = re.findall(r"[MmHhVvLlZz]|-?\d*\.?\d+", d)
@@ -151,6 +240,55 @@ def from_art(art):
     return [[art[r // 2][c // 2] == "#" for c in range(24)] for r in range(24)]
 
 
+def from_cells(art):
+    """A 12-cell drawing at 24 units, each cell on the odd unit `halve`
+    samples, so it lines up with the strokes of a Pixelarticon."""
+    grid = [[False] * 24 for _ in range(24)]
+    for r, row in enumerate(art):
+        for c, ch in enumerate(row):
+            if ch == "#":
+                for y in (2 * r + 1, 2 * r + 2):
+                    for x in (2 * c + 1, 2 * c + 2):
+                        if y < 24 and x < 24:
+                            grid[y][x] = True
+    return grid
+
+
+def in_boxes(c, r, boxes):
+    return boxes == "*" or any(c0 <= c <= c1 and r0 <= r <= r1 for c0, r0, c1, r1 in boxes)
+
+
+def split(grid, parts):
+    """The still base and each moving part of a 24-unit icon, at 24 and 12.
+    Parts are drawn on the 12 grid; a 24-unit pixel goes with a cell its
+    stroke covers, a moving one first, so a moving stroke keeps its weight."""
+    small = halve(grid)
+    owner = [[None] * 12 for _ in range(12)]
+    for r in range(12):
+        for c in range(12):
+            if small[r][c]:
+                for pid, boxes in parts:
+                    if in_boxes(c, r, boxes):
+                        owner[r][c] = pid
+                        break
+    ids = [pid for pid, _ in parts]
+    big = {pid: [[False] * 24 for _ in range(24)] for pid in [None] + ids}
+    for y in range(24):
+        for x in range(24):
+            if not grid[y][x]:
+                continue
+            cx = [(x - 1) // 2] if x % 2 else [x // 2 - 1, x // 2]
+            cy = [(y - 1) // 2] if y % 2 else [y // 2 - 1, y // 2]
+            found = [owner[r][c] for r in cy for c in cx if 0 <= r < 12 and 0 <= c < 12 and small[r][c]]
+            moving = [o for o in found if o is not None]
+            big[moving[0] if moving else None][y][x] = True
+    out = {}
+    for pid in [None] + ids:
+        cells = [[small[r][c] and owner[r][c] == pid for c in range(12)] for r in range(12)]
+        out[pid] = (big[pid], cells)
+    return out
+
+
 def halve(grid):
     # Every stroke is two units wide, so it covers exactly one odd unit:
     # sampling those keeps each stroke one cell wide, wherever it starts.
@@ -186,15 +324,32 @@ def show(grid):
     return "\n".join("".join("#" if v else "." for v in line) for line in grid)
 
 
-def main():
+def svgs():
+    """Each icon's SVG: the copies in pixels/, or Pixelarticons' package
+    (with --fetch, or when a copy is missing), saved there."""
+    local = {}
+    for name in ICONS:
+        path = os.path.join(ROOT, "pixels", name + ".svg")
+        if os.path.exists(path):
+            with open(path) as f:
+                local[name] = f.read()
+    if len(local) == len(ICONS) and "--fetch" not in sys.argv:
+        return local
     with urllib.request.urlopen(TARBALL, timeout=30) as r:
         pack = tarfile.open(fileobj=io.BytesIO(r.read()))
     out = {}
     for name in ICONS:
-        svg = pack.extractfile("package/svg/%s.svg" % name).read().decode()
+        out[name] = pack.extractfile("package/svg/%s.svg" % name).read().decode()
         with open(os.path.join(ROOT, "pixels", name + ".svg"), "w") as f:
-            f.write(svg)
-        out[name] = raster(svg)
+            f.write(out[name])
+    return out
+
+
+def main():
+    source = svgs()
+    out = {}
+    for name in ICONS:
+        out[name] = raster(source[name])
     for name, art in CUSTOM.items():
         out[name] = from_art(art)
     if "--show" in sys.argv:
@@ -210,12 +365,32 @@ def main():
         "// Generated by scripts/fetch-pixel-icons.py from Pixelarticons %s (MIT," % VERSION,
         "// https://pixelarticons.com), plus the AirPods and their case drawn there",
         "// on the same grid. Each icon is [x, y, width, height] rectangles: `g24` on",
-        "// the 24-unit grid, `g12` on the same grid halved for small sizes.",
+        "// the 24-unit grid, `g12` on the same grid halved for small sizes. Those",
+        "// are the parts that hold still; `parts` are the ones Motion.js moves, and",
+        "// an `extra` part shows only while the icon acts.",
         "",
         "var icons = {",
     ]
     for name, grid in out.items():
-        lines.append("  %s: { g24: %s, g12: %s }," % (json.dumps(name), json.dumps(rects(grid)), json.dumps(rects(halve(grid)))))
+        pieces = split(grid, PARTS.get(name, []))
+        base24, base12 = pieces.pop(None)
+        parts = []
+        for pid, (g24, g12) in pieces.items():
+            parts.append({"id": pid, "g24": rects(g24), "g12": rects(g12)})
+        for pid, art in EXTRAS.get(name, []):
+            if isinstance(art[0], list):
+                g24 = [[False] * 24 for _ in range(24)]
+                for x, y, w, h in art:
+                    for yy in range(y, y + h):
+                        for xx in range(x, x + w):
+                            g24[yy][xx] = True
+            else:
+                g24 = from_cells(art)
+            parts.append({"id": pid, "extra": True, "g24": rects(g24), "g12": rects(halve(g24))})
+        entry = "  %s: { g24: %s, g12: %s" % (json.dumps(name), json.dumps(rects(base24)), json.dumps(rects(base12)))
+        if parts:
+            entry += ", parts: %s" % json.dumps(parts)
+        lines.append(entry + " },")
     lines[-1] = lines[-1].rstrip(",")
     lines += ["}", ""]
     with open(os.path.join(ROOT, "Pixels.js"), "w") as f:

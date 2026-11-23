@@ -368,6 +368,17 @@ class Badge(unittest.TestCase):
         for name in ("laptop", "airpods", "airpods-case", "headphone", "gamepad", "keyboard", "smartphone", "battery-medium"):
             self.assertIsNotNone(pb.pixel_icon(name), name)
 
+    def test_icon_at_rest(self):
+        # The badge is a still: the parts that move are drawn where they rest,
+        # and what shows only while an icon acts is left out.
+        mouse = pb.pixel_icon("mouse")
+        self.assertIn([5, 3, 1, 2], mouse["g12"])
+        phone = pb.pixel_icon("smartphone")
+        self.assertTrue(phone["g12"])
+        laptop = pb.pixel_icon("laptop")
+        cells = {(x + i, y + j) for x, y, w, h in laptop["g12"] for i in range(w) for j in range(h)}
+        self.assertNotIn((3, 3), cells)
+
     def test_hex(self):
         self.assertEqual(pb.hex_rgb("#7fc8d8"), (0x7F, 0xC8, 0xD8))
         self.assertEqual(pb.hex_rgb("#ff7fc8d8"), (0x7F, 0xC8, 0xD8))

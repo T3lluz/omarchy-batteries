@@ -997,16 +997,27 @@ PIXELS_JS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file
 
 
 def pixel_icon(name: str, path: str = PIXELS_JS) -> dict | None:
-    """One icon's rectangles from Pixels.js: {"g24": [...], "g12": [...]}."""
+    """One icon's rectangles from Pixels.js, {"g24": [...], "g12": [...]}, at
+    rest: the still base with every part that moves (Motion.js) where it was
+    drawn, and none of the parts that show only while it acts."""
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
     except OSError:
         return None
-    m = re.search(r'"' + re.escape(name) + r'":\s*\{\s*g24:\s*(\[.*?\]\]),\s*g12:\s*(\[.*?\]\])\s*\}', text)
+    m = re.search(r'^\s*"' + re.escape(name) + r'":\s*(\{.*\}),?\s*$', text, re.M)
     if not m:
         return None
-    return {"g24": json.loads(m.group(1)), "g12": json.loads(m.group(2))}
+    try:
+        icon = json.loads(re.sub(r'([{,]\s*)(g24|g12|parts):', r'\1"\2":', m.group(1)))
+    except ValueError:
+        return None
+    g24, g12 = list(icon["g24"]), list(icon["g12"])
+    for part in icon.get("parts", []):
+        if not part.get("extra"):
+            g24 += part["g24"]
+            g12 += part["g12"]
+    return {"g24": g24, "g12": g12}
 
 
 def hex_rgb(value: str) -> tuple[int, int, int]:

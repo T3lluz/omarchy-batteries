@@ -4,7 +4,9 @@ import "Model.js" as Model
 
 // A room's level in the block face (Model.bigDigits), with a small % and
 // the mark beside it, a pixel icon (Model.markIcon): a bolt while charging,
-// a plug on a charger, the low battery when low. The blocks are laid out on the font's character grid but
+// a plug on a charger, the low battery when low. The mark acts when it
+// changes; the bolt strikes and the low cell blinks over and over while the
+// panel shows them (Motion.LOOPS). The blocks are laid out on the font's character grid but
 // drawn as rectangles, since typed block characters leave hairline seams
 // between rows and columns. `value` follows the room's battery while it
 // fills in, so the number counts up with it.
@@ -16,9 +18,11 @@ Item {
   property color foreground: "white"
   property string mark: ""
   readonly property real markSize: Math.round(fontSize * 1.1)
-  // The bolt breathes while charge flows in, on the panel's clock.
-  property bool breathing: false
-  property real clock: 0
+  // The panel is open on it: a looping mark loops.
+  property bool live: false
+  // Goes up when the room acts, so the mark acts along.
+  property int play: 0
+  property int delay: 0
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.bodySmall
 
@@ -90,7 +94,10 @@ Item {
         name: figure.mark
         size: figure.markSize
         color: figure.tone
-        opacity: figure.breathing ? 0.4 + 0.6 * (0.5 + 0.5 * Math.cos(figure.clock / Model.BATTERY.BREATHE_MS * 2 * Math.PI)) : 1
+        play: figure.play
+        delay: figure.delay
+        playOnChange: true
+        loop: figure.live
       }
     }
 

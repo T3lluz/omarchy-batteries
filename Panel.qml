@@ -188,25 +188,22 @@ Panel {
     onTriggered: root.cursorOn = !root.cursorOn
   }
 
-  // Reading the batteries by hand spins the refresh icon once.
-  property real spin: 0
-  NumberAnimation { id: spinRun; target: root; property: "spin"; from: 0; to: 360; duration: Style.duration(620); easing.type: Easing.OutCubic }
+  // Reading the batteries by hand turns the refresh arrows round once.
+  property int reads: 0
 
   function readNow() {
     if (client) client.pollNow()
-    if (!Style.reduceMotion) spinRun.restart()
+    reads++
   }
 
   // Switching between the rooms and the settings slides the new page in from
-  // the side it lives on, and the gear turns (or the arrow nudges) as it does.
+  // the side it lives on, and the gear's hub presses (or the arrow nudges).
   property real pageShift: 0
   property real pageFade: 1
-  property real gearTurn: 0
   ParallelAnimation {
     id: pageIn
     NumberAnimation { target: root; property: "pageShift"; to: 0; duration: Style.duration(320); easing.type: Easing.OutCubic }
     NumberAnimation { target: root; property: "pageFade"; to: 1; duration: Style.duration(220); easing.type: Easing.OutCubic }
-    NumberAnimation { target: root; property: "gearTurn"; to: 0; duration: Style.duration(420); easing.type: Easing.OutCubic }
   }
 
   function setting(name, fallback) { return prefs ? prefs.get(name, fallback) : fallback }
@@ -246,7 +243,6 @@ Panel {
     if (!opened || Style.reduceMotion) return
     pageShift = Style.space(setupOpen ? 18 : -18)
     pageFade = 0
-    gearTurn = setupOpen ? 1 : -1
     pageIn.restart()
   }
 
@@ -257,7 +253,8 @@ Panel {
   // rise into place one after another and each icon acts itself out.
   // Pointing at a room presses the cells of its batteries. A click opens it
   // to its details and bar switches (one room at a time), with a ripple out
-  // from the pointer and the icon acting out again.
+  // from the pointer and the icon acting out again. The icon also acts when
+  // the pointer comes in, and when the device comes back after being away.
   component Room: Rectangle {
     id: room
     property string key: ""
@@ -266,8 +263,8 @@ Panel {
     property var cells: []
     // How long after the panel opens this room comes in, in ms.
     property int delay: 0
-    // Goes up each time the icon should act itself out.
-    property int story: 0
+    // Goes up each time the icon should act itself out (Motion.js).
+    property int acts: 0
     property real rise: 0
     property real fade: 1
     readonly property bool expanded: root.openRoom === key
@@ -302,8 +299,12 @@ Panel {
         NumberAnimation { target: room; property: "rise"; to: 0; duration: Style.duration(460); easing.type: Easing.OutCubic }
         NumberAnimation { target: room; property: "fade"; to: 1; duration: Style.duration(280); easing.type: Easing.OutCubic }
       }
-      ScriptAction { script: room.story++ }
+      ScriptAction { script: room.acts++ }
     }
+
+    // A device that comes back, or turns up while the panel is open.
+    onStaleChanged: if (!stale && root.live) acts++
+    Component.onCompleted: if (root.live) enter()
 
     // Under the content, so the switches in an open room take their own
     // clicks; hover reaches it all the same.
@@ -312,6 +313,7 @@ Panel {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
+      onEntered: room.acts++
       onPositionChanged: function(mouse) {
         for (var i = 0; i < room.cells.length; i++) {
           var p = room.cells[i].mapFromItem(room, mouse.x, mouse.y)
@@ -326,7 +328,7 @@ Panel {
           var p = room.cells[i].mapFromItem(room, mouse.x, mouse.y)
           room.cells[i].press(p.x, p.y)
         }
-        room.story++
+        room.acts++
         root.toggleRoom(room.key)
       }
     }
@@ -378,28 +380,18 @@ Panel {
     property bool charging: false
     property bool expanded: false
     property int delay: 0
-    // The icon's story (Model.storyOf) and a count that plays it each time
-    // it goes up.
-    property string story: "pop"
-    property int tick: 0
-    property real k: 1
-    readonly property var pose: Model.storyPose(story, k)
+    // Goes up each time the icon acts out what it is (Motion.js).
+    property int play: 0
 
     width: parent ? parent.width : 0
     implicitHeight: Math.max(labels.implicitHeight, showFigure ? figure.implicitHeight : 0)
 
-    onTickChanged: if (!Style.reduceMotion) storyRun.restart()
+    // What the room stands for changed: charge starts or stops, it goes low
+    // or comes back up.
+    property int changes: 0
+    onChargingChanged: if (root.live) changes++
+    onFigureMarkChanged: if (root.live) changes++
 
-    NumberAnimation {
-      id: storyRun
-      target: head
-      property: "k"
-      from: 0
-      to: 1
-      duration: Style.duration(head.story === "buzz" ? 520 : 660)
-    }
-
-    // Moves in whole pixels of its own grid, so it never smears.
     PixelIcon {
       id: iconBox
       x: Math.round((root.iconColumn - width) / 2)
@@ -407,7 +399,7 @@ Panel {
       name: head.icon
       size: root.iconColumn
       color: head.tone
-      transform: Translate { x: head.pose.x * iconBox.cell; y: head.pose.y * iconBox.cell }
+      play: head.play + head.changes
     }
 
     Column {
@@ -469,8 +461,9 @@ Panel {
       tone: head.tone
       foreground: root.foreground
       mark: head.figureMark
-      breathing: head.charging && root.live
-      clock: root.clock
+      live: root.live
+      play: head.play
+      delay: 120
       fontFamily: root.shellFamily
     }
   }
@@ -611,6 +604,9 @@ Panel {
     property string key: ""
     property string label: ""
     property string icon: "airpods"
+    // The act: a bud waves alone in its own cell.
+    property string act: icon
+    property int play: 0
     property var pod: null
     property color tone: root.foreground
     property int delay: 0
@@ -627,8 +623,11 @@ Panel {
       PixelIcon {
         anchors.verticalCenter: parent.verticalCenter
         name: cell.icon
+        act: cell.act
         size: Style.font.bodySmall
         color: cell.tone
+        play: cell.play
+        delay: cell.delay
       }
 
       Text {
@@ -648,8 +647,9 @@ Panel {
       tone: cell.tone
       foreground: root.foreground
       mark: cell.seen ? root.markOf(cell.pod) : ""
-      breathing: cell.seen && cell.pod.charging === true && root.live
-      clock: root.clock
+      live: root.live
+      play: cell.play
+      delay: cell.delay + 120
       fontFamily: root.shellFamily
       fontSize: Style.font.caption
     }
@@ -798,8 +798,7 @@ Panel {
                   size: refreshButton.fontSize
                   color: root.foreground
                   fontFamily: root.shellFamily
-                  // Turns in quarters, as pixel art does.
-                  rotation: Math.round(root.spin / 90) * 90
+                  play: root.reads
                 }
               }
 
@@ -817,9 +816,8 @@ Panel {
                   size: gearButton.fontSize
                   color: root.foreground
                   fontFamily: root.shellFamily
-                  // The gear turns a quarter, the arrow nudges in, in whole steps.
-                  rotation: root.setupOpen ? 0 : Math.round(root.gearTurn * -2) * 45
-                  transform: Translate { x: root.setupOpen ? Math.round(root.gearTurn * 2) * Style.space(2) : 0 }
+                  // Acts as it swaps between the gear and the arrow back.
+                  playOnChange: true
                 }
               }
             }
@@ -902,8 +900,7 @@ Panel {
                 icon: Model.kindPixel("laptop")
                 tone: laptopRoom.tone
                 expanded: laptopRoom.expanded
-                story: Model.storyOf("laptop")
-                tick: laptopRoom.story
+                play: laptopRoom.acts
                 delay: laptopRoom.delay + 120
                 charging: !!root.laptop && root.laptop.charging
                 value: root.laptop ? laptopPad.shown : null
@@ -960,8 +957,7 @@ Panel {
                 icon: podsRoom.isHeadset ? "headphone" : "airpods"
                 tone: podsRoom.headset ? root.roomTone("airpods", podsRoom.headset) : podsRoom.tone
                 expanded: podsRoom.expanded
-                story: Model.storyOf("airpods")
-                tick: podsRoom.story
+                play: podsRoom.acts
                 delay: podsRoom.delay + 120
                 charging: !!podsRoom.headset && podsRoom.headset.charging
                 showFigure: podsRoom.isHeadset
@@ -993,6 +989,8 @@ Panel {
 
                 PodCell {
                   id: leftCell
+                  play: podsRoom.acts
+                  act: "airpods-left"
                   width: podCells.cellWidth
                   key: "left"
                   label: "Left"
@@ -1003,6 +1001,8 @@ Panel {
 
                 PodCell {
                   id: rightCell
+                  play: podsRoom.acts
+                  act: "airpods-right"
                   width: podCells.cellWidth
                   key: "right"
                   label: "Right"
@@ -1013,6 +1013,7 @@ Panel {
 
                 PodCell {
                   id: caseCell
+                  play: podsRoom.acts
                   width: podCells.cellWidth
                   key: "case"
                   label: "Case"
@@ -1056,8 +1057,7 @@ Panel {
                   icon: Model.kindPixel(deviceRoom.modelData.kind)
                   tone: deviceRoom.tone
                   expanded: deviceRoom.expanded
-                  story: Model.storyOf(deviceRoom.modelData.kind)
-                  tick: deviceRoom.story
+                  play: deviceRoom.acts
                   delay: deviceRoom.delay + 120
                   charging: deviceRoom.modelData.charging === true && !deviceRoom.modelData.stale
                   value: Model.hasLevel(deviceRoom.modelData.level) ? devicePad.shown : null

@@ -933,53 +933,6 @@ function batteryCells(opts) {
   return out
 }
 
-// What each kind of icon acts out when its room opens or is clicked, after
-// DailyDash's AnimatedIcon: only that motion, ending exactly where it began.
-// The laptop hops, a mouse wiggles, keys press, earbuds tilt, a speaker
-// pulses, a controller shakes, a phone buzzes; the rest pop.
-var KIND_STORIES = {
-  "laptop": "hop",
-  "mouse": "wiggle",
-  "keyboard": "press",
-  "touchpad": "press",
-  "pen": "wiggle",
-  "airpods": "tilt",
-  "headset": "tilt",
-  "headphones": "tilt",
-  "speakers": "pulse",
-  "media-player": "pulse",
-  "gaming-input": "shake",
-  "phone": "buzz",
-  "tablet": "buzz"
-}
-
-function storyOf(kind) {
-  return KIND_STORIES[kind] || "pop"
-}
-
-// The icon's pose `k` of the way through its story (0..1): an offset in
-// whole pixels of the icon's own grid, so pixel art never smears. A hop
-// rises three, a wiggle and a tilt sway, keys press down one, a speaker
-// beats twice, a shake and a buzz rattle.
-function storyPose(story, k) {
-  var pose = { x: 0, y: 0 }
-  if (!(k > 0 && k < 1)) return pose
-  var arc = Math.sin(Math.PI * k)
-  var fade = 1 - k
-  if (story === "hop") pose.y = -Math.round(arc * 3)
-  else if (story === "wiggle") pose.x = Math.round(Math.sin(k * Math.PI * 3) * 1.6 * fade)
-  else if (story === "press") pose.y = Math.round(arc * 1.2)
-  else if (story === "tilt") pose.x = Math.round(Math.sin(k * Math.PI * 2) * 2 * fade)
-  else if (story === "pulse") pose.y = -Math.round(Math.abs(Math.sin(k * Math.PI * 2)) * 1.4)
-  else if (story === "shake") pose.x = Math.round(Math.sin(k * Math.PI * 4) * 2 * fade)
-  else if (story === "buzz") pose.x = Math.round(Math.sin(k * Math.PI * 10) * 1.6 * fade)
-  else pose.y = -Math.round(arc * 2)
-  // No negative zero: a pose at rest equals { x: 0, y: 0 }.
-  pose.x += 0
-  pose.y += 0
-  return pose
-}
-
 // Text arriving the way a terminal decodes it: the first `progress` of it
 // is real, the rest cycles through glyphs. Spaces and separators stay put so
 // the line keeps its shape. `seed` varies the noise between runs.

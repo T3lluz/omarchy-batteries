@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, storyOf, storyPose, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState, crispTextSize }")()
+const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState, crispTextSize }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -446,18 +446,6 @@ for (const d of "0123456789") assert.ok(Model.bigDigits(d).every(r => [...r].len
   assert.ok(ring(5000).every(g => g === 0))
 }
 
-// Icons act out their kind and always end where they began.
-assert.strictEqual(Model.storyOf("laptop"), "hop")
-assert.strictEqual(Model.storyOf("phone"), "buzz")
-assert.strictEqual(Model.storyOf("nothing"), "pop")
-for (const story of ["hop", "wiggle", "press", "tilt", "pulse", "shake", "buzz", "pop"]) {
-  for (const k of [0, 1]) assert.deepStrictEqual(Model.storyPose(story, k), { x: 0, y: 0 }, story)
-  // Whole pixels only, and every story moves somewhere along the way.
-  const poses = Array.from({ length: 49 }, (_, i) => Model.storyPose(story, (i + 1) / 50))
-  assert.ok(poses.every(p => Number.isInteger(p.x) && Number.isInteger(p.y)), story)
-  assert.ok(poses.some(p => p.x !== 0 || p.y !== 0), story + " moves")
-}
-
 // Decoding text keeps its length, spaces and separators, and ends as the text.
 {
   const line = "Charging · 33m to 90%"
@@ -507,9 +495,12 @@ assert.strictEqual(Model.markIcon(null, 20), "")
   for (const key of Object.keys(Model.GLYPHS)) assert.ok(Pixels[Model.pixelFor(Model.GLYPHS[key])], "no pixel icon for GLYPHS." + key)
   assert.ok(Pixels[Model.pixelFor("\u{F012C}")], "the updater's done")
   assert.strictEqual(Model.pixelFor("x"), "")
+  // The still base and the parts that move (Motion.js) on the grid.
   for (const [name, art] of Object.entries(Pixels)) {
-    assert.ok(art.g24.every(r => r.every(v => Number.isInteger(v)) && r[0] + r[2] <= 24 && r[1] + r[3] <= 24), name)
-    assert.ok(art.g12.length > 0 && art.g12.every(r => r[0] + r[2] <= 12 && r[1] + r[3] <= 12), name)
+    const g24 = art.g24.concat(...(art.parts || []).map(p => p.g24))
+    const g12 = art.g12.concat(...(art.parts || []).map(p => p.g12))
+    assert.ok(g24.every(r => r.every(v => Number.isInteger(v)) && r[0] + r[2] <= 24 && r[1] + r[3] <= 24), name)
+    assert.ok(g12.length > 0 && g12.every(r => r[0] + r[2] <= 12 && r[1] + r[3] <= 12), name)
   }
   // Panel.qml names its pixel icons outright; each must exist.
   const panel = fs.readFileSync(path.join(__dirname, "..", "Panel.qml"), "utf8")

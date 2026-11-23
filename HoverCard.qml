@@ -39,6 +39,9 @@ PopupWindow {
   // shell's tooltip does.
   readonly property bool scaleReady: visible && !!barWindow && Math.round(devicePixelRatio * 120) === Math.round(barWindow.devicePixelRatio * 120)
   property bool revealed: false
+  // Each time the card shows, its icons act once, a row after the other.
+  property int shows: 0
+  onRevealedChanged: if (revealed) shows++
   onVisibleChanged: if (!visible) revealed = false
   onScaleReadyChanged: if (scaleReady) Qt.callLater(function() { if (card.scaleReady) card.revealed = true })
 
@@ -93,6 +96,7 @@ PopupWindow {
         Rectangle {
           id: row
           required property var modelData
+          required property int index
           readonly property color tone: !modelData.stale && Model.isLow(modelData, card.lowThreshold) ? Commons.Color.urgent : card.toneOf(modelData.tone)
           readonly property string mark: Model.markIcon(modelData, card.lowThreshold)
 
@@ -108,6 +112,8 @@ PopupWindow {
             anchors.verticalCenter: parent.verticalCenter
             name: row.modelData.icon
             size: Style.font.body
+            play: card.shows
+            delay: row.index * 70
             color: row.tone
           }
 
@@ -144,6 +150,8 @@ PopupWindow {
               name: row.mark || "zap"
               size: Style.font.body
               color: row.tone
+              play: card.shows
+              delay: row.index * 70 + 120
             }
           }
 
