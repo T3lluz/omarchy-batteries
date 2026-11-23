@@ -1112,6 +1112,15 @@ function pixelText(text) {
   return { width: x, height: 5, rects: rects }
 }
 
+// Monocraft, the panel's text face, is drawn on nine cells to the em. Its
+// letters are sharp only when a cell lands on whole device pixels, so a size
+// moves to the nearest one that does: on a 2x screen 9, 13.5 and 18, where
+// 10 or 12 would smear every stroke across two pixels.
+function crispTextSize(size, dpr) {
+  var step = 9 / (dpr > 0 ? dpr : 1)
+  return Math.max(1, Math.round(size / step)) * step
+}
+
 // ------------------------------------------------------------ room tones
 
 // Each kind's own hue, DailyDash's, for themes whose palette is all greys.

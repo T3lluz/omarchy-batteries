@@ -32,7 +32,14 @@ Panel {
   // A theme's "red" can be a dark grey. Low must not read quieter than normal.
   readonly property color lowTone: Model.contrast(urgent, Commons.Color.background) >= 3.5 ? urgent : foreground
   readonly property color dim: Qt.darker(foreground, 1.5)
-  readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  // Text in Monocraft (BarWidget.textFont). The block digits keep the
+  // shell's font's character grid, and typed glyphs its Nerd Font.
+  readonly property string shellFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property string fontFamily: hostWidget && hostWidget.textFont ? hostWidget.textFont : shellFamily
+  // A size for the panel's own text that keeps Monocraft sharp on this
+  // screen. That text renders natively, so each line also starts on a whole
+  // pixel instead of smearing its top row.
+  function textSize(size) { return Model.crispTextSize(size, hostWidget ? hostWidget.dpr : 1) }
 
   readonly property var updater: client ? client.updater : null
   readonly property var laptop: client ? client.laptop : null
@@ -424,7 +431,8 @@ Panel {
           text: head.title
           color: root.foreground
           font.family: root.fontFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: root.textSize(Style.font.body)
+          renderType: Text.NativeRendering
           font.bold: true
         }
 
@@ -447,7 +455,8 @@ Panel {
         delay: head.delay
         color: root.dim
         font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: root.textSize(Style.font.caption)
+        renderType: Text.NativeRendering
       }
     }
 
@@ -462,7 +471,7 @@ Panel {
       mark: head.figureMark
       breathing: head.charging && root.live
       clock: root.clock
-      fontFamily: root.fontFamily
+      fontFamily: root.shellFamily
     }
   }
 
@@ -517,7 +526,8 @@ Panel {
       color: root.foreground
       opacity: 0.6
       font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
+      font.pixelSize: root.textSize(Style.font.bodySmall)
+      renderType: Text.NativeRendering
     }
 
     Decode {
@@ -530,7 +540,8 @@ Panel {
       delay: pair.delay
       color: root.foreground
       font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
+      font.pixelSize: root.textSize(Style.font.bodySmall)
+      renderType: Text.NativeRendering
     }
   }
 
@@ -626,7 +637,8 @@ Panel {
         text: cell.label
         color: root.foreground
         font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
+        font.pixelSize: root.textSize(Style.font.bodySmall)
+        renderType: Text.NativeRendering
         font.bold: true
       }
     }
@@ -638,7 +650,7 @@ Panel {
       mark: cell.seen ? root.markOf(cell.pod) : ""
       breathing: cell.seen && cell.pod.charging === true && root.live
       clock: root.clock
-      fontFamily: root.fontFamily
+      fontFamily: root.shellFamily
       fontSize: Style.font.caption
     }
 
@@ -664,7 +676,8 @@ Panel {
       delay: cell.delay + 80
       color: root.dim
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: root.textSize(Style.font.caption)
+      renderType: Text.NativeRendering
     }
   }
   KeyboardPanel {
@@ -744,7 +757,8 @@ Panel {
                 text: root.setupOpen ? "Settings" : "Batteries"
                 color: root.foreground
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.title
+                font.pixelSize: root.textSize(Style.font.title)
+                renderType: Text.NativeRendering
                 font.bold: true
               }
 
@@ -756,7 +770,8 @@ Panel {
                 text: "❯ " + root.caption.substring(0, root.typed) + (root.cursorOn || root.typed < root.caption.length ? "▌" : " ")
                 color: !root.setupOpen && root.heroBattery.low ? root.lowTone : Qt.darker(root.foreground, 1.3)
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                font.pixelSize: root.textSize(Style.font.caption)
+                renderType: Text.NativeRendering
               }
             }
 
@@ -782,7 +797,7 @@ Panel {
                   icon: Model.GLYPHS.refresh
                   size: refreshButton.fontSize
                   color: root.foreground
-                  fontFamily: root.fontFamily
+                  fontFamily: root.shellFamily
                   // Turns in quarters, as pixel art does.
                   rotation: Math.round(root.spin / 90) * 90
                 }
@@ -801,7 +816,7 @@ Panel {
                   icon: root.setupOpen ? Model.GLYPHS.back : Model.GLYPHS.gear
                   size: gearButton.fontSize
                   color: root.foreground
-                  fontFamily: root.fontFamily
+                  fontFamily: root.shellFamily
                   // The gear turns a quarter, the arrow nudges in, in whole steps.
                   rotation: root.setupOpen ? 0 : Math.round(root.gearTurn * -2) * 45
                   transform: Translate { x: root.setupOpen ? Math.round(root.gearTurn * 2) * Style.space(2) : 0 }
@@ -1084,7 +1099,8 @@ Panel {
               text: "Wireless mice, keyboards, headsets, controllers and phones show up here."
               color: root.dim
               font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
+              font.pixelSize: root.textSize(Style.font.bodySmall)
+              renderType: Text.NativeRendering
             }
           }
 

@@ -22,6 +22,8 @@ PopupWindow {
   property int lowThreshold: 20
   property int unit: 2
   property string fontFamily: Style.font.family
+  // The bar's scale, which sets the sizes that keep Monocraft sharp.
+  property real dpr: 1
 
   readonly property color foreground: Commons.Color.tooltip.text
   readonly property real gap: 6
@@ -121,7 +123,8 @@ PopupWindow {
             text: row.modelData.name + (row.modelData.note ? "  " + row.modelData.note : "")
             color: card.foreground
             font.family: card.fontFamily
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Model.crispTextSize(Style.font.bodySmall, card.dpr)
+            renderType: Text.NativeRendering
           }
 
           // The mark (charging, on a charger, low) in a column of its own that

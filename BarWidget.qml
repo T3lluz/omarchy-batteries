@@ -48,6 +48,13 @@ BarWidget {
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
   readonly property int pixelUnit: Math.max(1, Math.round(button.fontSize * 0.72 * dpr / 5))
   readonly property int iconUnit: Math.max(1, Math.floor(Style.bar.iconSize * 24 / 20 * dpr / 12))
+  // The panel's and the hover card's text is set in Monocraft, shipped in
+  // assets/fonts so it needs no install. The bold is its own file, so bold
+  // text is drawn, not smeared. Until it loads, the shell's font stands in.
+  readonly property string textFont: monocraft.status === FontLoader.Ready ? monocraft.name : Style.font.family
+
+  FontLoader { id: monocraft; source: Qt.resolvedUrl("assets/fonts/Monocraft.ttf") }
+  FontLoader { source: Qt.resolvedUrl("assets/fonts/Monocraft-Bold.ttf") }
 
   function toneColor(tone) {
     if (tone === "low") return urgent
@@ -228,7 +235,8 @@ BarWidget {
     palette: panelLoader.item ? panelLoader.item.palette : ({})
     lowThreshold: root.lowThreshold
     unit: root.pixelUnit
-    fontFamily: button.fontFamily
+    fontFamily: root.textFont
+    dpr: root.dpr
   }
 
   WidgetButton {

@@ -4,7 +4,7 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.9.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.10.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
@@ -127,6 +127,6 @@ omarchy restart shell             # pick up QML changes
 
 ## License
 
-MIT. The icons are from Pixelarticons (MIT). Not affiliated with Apple, Glorious, HyperX, JBL or Razer.
+MIT. The icons are from Pixelarticons (MIT). The text face is [Monocraft](https://github.com/IdreesInc/Monocraft) by Idrees Hassan, bundled under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). Not affiliated with Apple, Glorious, HyperX, JBL or Razer.
 
 One of a set of Omarchy plugins: **Batteries** · [ROG Deck](https://github.com/T3lluz/omarchy-rog-deck) · [Sonus](https://github.com/T3lluz/omarchy-sonus) · [Server Dashboard](https://github.com/T3lluz/omarchy-server-dashboard)
