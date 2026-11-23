@@ -36,10 +36,7 @@ Panel {
   // shell's font's character grid, and typed glyphs its Nerd Font.
   readonly property string shellFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string fontFamily: hostWidget && hostWidget.textFont ? hostWidget.textFont : shellFamily
-  // A size for the panel's own text that keeps Monocraft sharp on this
-  // screen. That text renders natively, so each line also starts on a whole
-  // pixel instead of smearing its top row.
-  function textSize(size) { return Model.crispTextSize(size, hostWidget ? hostWidget.dpr : 1) }
+  // The panel's own text is Words.qml, which keeps Monocraft sharp.
 
   readonly property var updater: client ? client.updater : null
   readonly property var laptop: client ? client.laptop : null
@@ -415,23 +412,21 @@ Panel {
         width: parent.width
         spacing: Style.space(5)
 
-        Text {
+        Words {
           id: titleText
           width: Math.min(implicitWidth, parent.width - chevron.width - parent.spacing)
-          textFormat: Text.PlainText
-          wrapMode: Text.WordWrap
           text: head.title
           color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: root.textSize(Style.font.body)
-          renderType: Text.NativeRendering
+          family: root.fontFamily
+          size: Style.font.body
           font.bold: true
         }
 
         // Flips when the room opens; turned pixel art would smear on the way.
+        // Beside the first line, when a long name takes two.
         PixelIcon {
           id: chevron
-          anchors.verticalCenter: titleText.verticalCenter
+          y: Math.round((titleText.lineSize - height) / 2 * titleText.dpr) / titleText.dpr
           name: "chevron-down"
           size: Style.font.caption
           color: root.dim
@@ -442,13 +437,11 @@ Panel {
       Decode {
         width: parent.width
         visible: value !== ""
-        wrapMode: Text.WordWrap
         value: head.status
         delay: head.delay
         color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: root.textSize(Style.font.caption)
-        renderType: Text.NativeRendering
+        family: root.fontFamily
+        size: Style.font.caption
       }
     }
 
@@ -471,15 +464,15 @@ Panel {
   // Text that decodes into place, a terminal's way, when the panel opens.
   // Later changes just swap, so a reading that moves every few seconds
   // stays easy to read.
-  component Decode: Text {
+  component Decode: Words {
     id: dec
     property string value: ""
     property int delay: 0
     property real progress: 1
     property int seed: 0
+    readonly property string kept: Model.keepTogether(value)
 
-    textFormat: Text.PlainText
-    text: progress >= 1 ? value : Model.scramble(value, progress, seed)
+    text: progress >= 1 ? kept : Model.scramble(kept, progress, seed)
 
     function run(wait) {
       decodeRun.stop()
@@ -509,18 +502,18 @@ Panel {
     property string label: ""
     property string value: ""
     property int delay: 0
+    // Its label and value side by side, unwrapped.
+    readonly property real natural: pairLabel.implicitWidth + Style.space(8) + pairValue.implicitWidth
 
     implicitHeight: Math.max(pairLabel.implicitHeight, pairValue.implicitHeight)
 
-    Text {
+    Words {
       id: pairLabel
-      textFormat: Text.PlainText
       text: pair.label
       color: root.foreground
       opacity: 0.6
-      font.family: root.fontFamily
-      font.pixelSize: root.textSize(Style.font.bodySmall)
-      renderType: Text.NativeRendering
+      family: root.fontFamily
+      size: Style.font.bodySmall
     }
 
     Decode {
@@ -528,17 +521,16 @@ Panel {
       anchors.right: parent.right
       width: Math.min(implicitWidth, pair.width - pairLabel.implicitWidth - Style.space(8))
       horizontalAlignment: Text.AlignRight
-      wrapMode: Text.WordWrap
       value: pair.value
       delay: pair.delay
       color: root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: root.textSize(Style.font.bodySmall)
-      renderType: Text.NativeRendering
+      family: root.fontFamily
+      size: Style.font.bodySmall
     }
   }
 
-  // Readings two to a line.
+  // Readings two to a line, or one when a value would have to wrap in half
+  // the width (a long model name).
   component Facts: Grid {
     id: factGrid
     property var facts: []
@@ -546,13 +538,22 @@ Panel {
 
     visible: facts.length > 0
     width: parent ? parent.width : 0
-    columns: 2
+    columns: halfFits ? 2 : 1
     columnSpacing: Style.space(20)
     rowSpacing: Style.spacing.labelGap
 
-    readonly property real cellWidth: (width - columnSpacing) / 2
+    readonly property real halfWidth: (width - columnSpacing) / 2
+    readonly property real cellWidth: columns === 2 ? halfWidth : width
+    readonly property bool halfFits: {
+      for (var i = 0; i < pairs.count; i++) {
+        var pair = pairs.itemAt(i)
+        if (pair && pair.natural > halfWidth) return false
+      }
+      return true
+    }
 
     Repeater {
+      id: pairs
       model: factGrid.facts
 
       InfoPair {
@@ -630,14 +631,12 @@ Panel {
         delay: cell.delay
       }
 
-      Text {
+      Words {
         anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
         text: cell.label
         color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: root.textSize(Style.font.bodySmall)
-        renderType: Text.NativeRendering
+        family: root.fontFamily
+        size: Style.font.bodySmall
         font.bold: true
       }
     }
@@ -671,13 +670,11 @@ Panel {
 
     Decode {
       width: parent.width
-      wrapMode: Text.WordWrap
       value: Model.podPartState(cell.key, cell.pod, root.nowSec)
       delay: cell.delay + 80
       color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: root.textSize(Style.font.caption)
-      renderType: Text.NativeRendering
+      family: root.fontFamily
+      size: Style.font.caption
     }
   }
   KeyboardPanel {
@@ -751,27 +748,23 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(2)
 
-              Text {
+              Words {
                 width: parent.width
-                textFormat: Text.PlainText
                 text: root.setupOpen ? "Settings" : "Batteries"
                 color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: root.textSize(Style.font.title)
-                renderType: Text.NativeRendering
+                family: root.fontFamily
+                size: Style.font.title
                 font.bold: true
               }
 
-              Text {
+              Words {
                 width: parent.width
-                textFormat: Text.PlainText
-                wrapMode: Text.WordWrap
                 // The prompt sign in the accent, the line in the dim colour.
-                text: "❯ " + root.caption.substring(0, root.typed) + (root.cursorOn || root.typed < root.caption.length ? "▌" : " ")
+                // Monocraft's own > and _, as the laptop's screen shows them.
+                text: "> " + root.caption.substring(0, root.typed) + (root.cursorOn || root.typed < root.caption.length ? "_" : " ")
                 color: !root.setupOpen && root.heroBattery.low ? root.lowTone : Qt.darker(root.foreground, 1.3)
-                font.family: root.fontFamily
-                font.pixelSize: root.textSize(Style.font.caption)
-                renderType: Text.NativeRendering
+                family: root.fontFamily
+                size: Style.font.caption
               }
             }
 
@@ -1091,16 +1084,13 @@ Panel {
               }
             }
 
-            Text {
+            Words {
               visible: root.devices.length === 0 && !root.laptop && !root.airpods && !!root.client && root.client.loaded && root.client.errorText === ""
               width: parent.width
-              textFormat: Text.PlainText
-              wrapMode: Text.WordWrap
               text: "Wireless mice, keyboards, headsets, controllers and phones show up here."
               color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: root.textSize(Style.font.bodySmall)
-              renderType: Text.NativeRendering
+              family: root.fontFamily
+              size: Style.font.bodySmall
             }
           }
 

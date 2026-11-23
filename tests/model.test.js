@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState, crispTextSize }")()
+const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState, crispTextSize, keepTogether }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -573,6 +573,19 @@ assert.strictEqual(Model.markIcon(null, 20), "")
   // A device asleep with no level still gets its line.
   assert.strictEqual(Model.hoverRows({ devices: [asleep] })[0].note, "asleep")
   assert.deepStrictEqual(Model.hoverRows(null), [])
+}
+
+// A reading wraps between its pieces, never inside one.
+{
+  const nb = "\u00A0"
+  assert.strictEqual(Model.keepTogether("JBL Charge 5 · On battery · Bluetooth"), "JBL Charge 5" + nb + "· On battery" + nb + "· Bluetooth")
+  assert.strictEqual(Model.keepTogether("Charging · 2h 00m to 90%"), "Charging" + nb + "· 2h" + nb + "00m to 90%")
+  assert.strictEqual(Model.keepTogether("18 W"), "18" + nb + "W")
+  assert.strictEqual(Model.keepTogether("closed · just now"), "closed" + nb + "· just" + nb + "now")
+  assert.strictEqual(Model.keepTogether("Glorious Model O Wireless"), "Glorious Model O Wireless")
+  assert.strictEqual(Model.keepTogether(null), "")
+  // Decoding keeps them too.
+  assert.strictEqual(Model.scramble("a" + nb + "b", 0, 1).charAt(1), nb)
 }
 
 // Text sizes land Monocraft's cells on whole device pixels.

@@ -559,8 +559,8 @@ function barPicks(state) {
   }
   var pods = state ? state.airpods : null
   if (airpodsShown(pods)) {
-    picks.push({ key: "barAirpods", room: "airpods", inRoom: pods.isHeadset ? "Level in the bar" : "Emptier bud in the bar", icon: GLYPHS.earbuds, label: pods.name || "AirPods", hint: "The emptier bud, while they are connected", fallback: true })
-    if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", room: "airpods", inRoom: "Case in the bar, while it is open", icon: GLYPHS.airpodsCase, label: "AirPods case", hint: "While the case is open and in range", fallback: false })
+    picks.push({ key: "barAirpods", room: "airpods", inRoom: pods.isHeadset ? "Level in the bar" : "Emptier bud in the bar", icon: GLYPHS.earbuds, label: "AirPods", hint: (pods.name ? pods.name + ": " : "") + (pods.isHeadset ? "their level" : "the emptier bud") + ", while they are connected", fallback: true })
+    if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", room: "airpods", inRoom: "Case in the bar while open", icon: GLYPHS.airpodsCase, label: "AirPods case", hint: "While the case is open and in range", fallback: false })
   }
   var devices = (state && state.devices) || []
   devices.forEach(function(d) {
@@ -933,6 +933,19 @@ function batteryCells(opts) {
   return out
 }
 
+// A reading's pieces held together where a line may break: the dot stays at
+// the end of the piece before it, "2h 00m", "18 W" and "just now" stay
+// whole, so a wrapped line never starts with a dot or a unit.
+var NBSP = "\u00A0"
+
+function keepTogether(text) {
+  return String(text || "")
+    .replace(/ \u00B7 /g, NBSP + "\u00B7 ")
+    .replace(/(\d+h) (\d+m)/g, "$1" + NBSP + "$2")
+    .replace(/(\d+(?:\.\d+)?) (W|Wh|%|GHz)\b/g, "$1" + NBSP + "$2")
+    .replace(/just now/g, "just" + NBSP + "now")
+}
+
 // Text arriving the way a terminal decodes it: the first `progress` of it
 // is real, the rest cycles through glyphs. Spaces and separators stay put so
 // the line keeps its shape. `seed` varies the noise between runs.
@@ -945,7 +958,7 @@ function scramble(text, progress, seed) {
   var out = ""
   for (var i = 0; i < text.length; i++) {
     var ch = text.charAt(i)
-    if (i < keep || ch === " " || ch === "\u00B7") { out += ch; continue }
+    if (i < keep || ch === " " || ch === NBSP || ch === "\u00B7") { out += ch; continue }
     var h = (((i + 1) * 73856093) ^ (((seed || 0) + 1) * 19349663) ^ ((tick + 1) * 83492791)) >>> 0
     out += GLITCH.charAt(h % GLITCH.length)
   }

@@ -22,8 +22,6 @@ PopupWindow {
   property int lowThreshold: 20
   property int unit: 2
   property string fontFamily: Style.font.family
-  // The bar's scale, which sets the sizes that keep Monocraft sharp.
-  property real dpr: 1
 
   readonly property color foreground: Commons.Color.tooltip.text
   readonly property real gap: 6
@@ -76,7 +74,17 @@ PopupWindow {
   BorderSurface {
     id: frame
     opacity: card.revealed ? 1 : 0
-    implicitWidth: Style.space(280)
+    // Wide enough for every row on one line, within reason: a name longer
+    // than that wraps.
+    implicitWidth: Math.min(Style.space(380), Math.max(Style.space(280), Math.ceil(widest) + Style.space(8) * 2))
+    readonly property real widest: {
+      var w = 0
+      for (var i = 0; i < rowRepeater.count; i++) {
+        var r = rowRepeater.itemAt(i)
+        if (r) w = Math.max(w, r.need)
+      }
+      return w
+    }
     implicitHeight: list.implicitHeight + Style.space(8) * 2
     color: Commons.Color.tooltip.background
     borderSpec: Border.surfaceSpec("tooltip", "border", Commons.Color.tooltip.border, 1)
@@ -90,6 +98,7 @@ PopupWindow {
       spacing: Style.space(3)
 
       Repeater {
+        id: rowRepeater
         model: card.rows
 
         // One battery: tinted in its room's colour, as in the panel.
@@ -97,6 +106,10 @@ PopupWindow {
           id: row
           required property var modelData
           required property int index
+          // As wide as it needs to be for its name and note on one line: the
+          // name and every fixed column beside it.
+          readonly property real need: icon.x + icon.width + Style.space(6) + name.implicitWidth + Style.space(6)
+            + markSlot.width + Style.space(5) + cells.width + Style.space(8) + level.width + Style.space(6)
           readonly property color tone: !modelData.stale && Model.isLow(modelData, card.lowThreshold) ? Commons.Color.urgent : card.toneOf(modelData.tone)
           readonly property string mark: Model.markIcon(modelData, card.lowThreshold)
 
@@ -117,20 +130,17 @@ PopupWindow {
             color: row.tone
           }
 
-          Text {
+          Words {
             id: name
             anchors.left: icon.right
             anchors.leftMargin: Style.space(6)
             anchors.right: markSlot.left
             anchors.rightMargin: Style.space(6)
             anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            text: row.modelData.name + (row.modelData.note ? "  " + row.modelData.note : "")
+            text: Model.keepTogether(row.modelData.name + (row.modelData.note ? "  " + row.modelData.note : ""))
             color: card.foreground
-            font.family: card.fontFamily
-            font.pixelSize: Model.crispTextSize(Style.font.bodySmall, card.dpr)
-            renderType: Text.NativeRendering
+            family: card.fontFamily
+            size: Style.font.bodySmall
           }
 
           // The mark (charging, on a charger, low) in a column of its own that

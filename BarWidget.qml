@@ -236,7 +236,6 @@ BarWidget {
     lowThreshold: root.lowThreshold
     unit: root.pixelUnit
     fontFamily: root.textFont
-    dpr: root.dpr
   }
 
   WidgetButton {
