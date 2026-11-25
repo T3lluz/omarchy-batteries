@@ -33,7 +33,8 @@ Item {
   property bool playOnChange: false
 
   readonly property var art: Pixels.icons[name] || null
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  // The window's ratio, not Screen's: at a 1.25 scale Screen says 2.
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   // Device pixels across, in twelfths: odd counts take the halved grid. Its
   // strokes are this many device pixels thick either way.
   readonly property int twelfths: unit > 0 ? unit : Math.max(1, Math.round(size * dpr / 12))
@@ -76,15 +77,52 @@ Item {
     ScriptAction { script: icon.actMs = -1 }
   }
 
-  // The shared clock: the wall clock, so every loop is in step.
-  FrameAnimation {
-    running: icon.looping
-    onTriggered: icon.loopMs = Date.now()
-    onRunningChanged: if (!running) icon.loopMs = -1
+  // The shared clock is the wall clock, so every loop is in step. One timer
+  // sleeps until the frame next changes (Motion.loopWait), so a loop costs a
+  // wake-up a frame, not one every time the window draws.
+  function tick() {
+    if (!looping) { loopTimer.stop(); loopMs = -1; return }
+    var now = Date.now()
+    loopMs = now
+    loopTimer.interval = Math.max(1, Motion.loopWait(act, now))
+    loopTimer.restart()
+  }
+
+  onLoopingChanged: tick()
+  Component.onCompleted: { tick(); snap() }
+
+  Timer {
+    id: loopTimer
+    repeat: false
+    onTriggered: icon.tick()
+  }
+
+  // How far the cells move to start on a whole device pixel, checked before
+  // each frame the window draws (it draws only when something changed). A
+  // layout that lands the icon between two pixels would otherwise smear
+  // every edge, worst at 1.25. ROG Deck's.
+  property real snapX: 0
+  property real snapY: 0
+
+  function snap() {
+    if (!visible) return
+    var p = icon.mapToItem(null, 0, 0)
+    var dx = Math.round(p.x * dpr) / dpr - p.x
+    var dy = Math.round(p.y * dpr) / dpr - p.y
+    if (Math.abs(dx - snapX) > 0.001) snapX = dx
+    if (Math.abs(dy - snapY) > 0.001) snapY = dy
+  }
+
+  Connections {
+    target: icon.Window.window
+    ignoreUnknownSignals: true
+    function onAfterAnimating() { icon.snap() }
   }
 
   Item {
     id: body
+    x: icon.snapX
+    y: icon.snapY
     width: icon.implicitWidth
     height: icon.implicitHeight
     rotation: (icon.pose.turn || 0) * 90

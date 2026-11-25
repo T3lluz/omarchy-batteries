@@ -31,6 +31,8 @@ Usage:
   batteries [probe]       JSON for the bar widget
   batteries list          human readable
   batteries install-udev  (as root) grant the seat user hidraw access
+  batteries uninstall-udev
+                          (as root) take that access away again
   batteries badge OUT SIZE ICON LEVEL TONE
                           the picture a low-battery notification carries: the
                           pixel icon ICON over a small battery at LEVEL, in TONE
@@ -665,6 +667,9 @@ def laptop(upower_times: dict, root: str = PS_ROOT) -> dict | None:
     elif status == "charging":
         target = full * (limit / 100 if limit else 1)
         time_to_full = times.get("timeToFull") or (round(max(0, target - energy) / rate * 3600) if rate > 0.1 else None)
+    # A trickle makes an estimate of days ("545h 00m"), which says nothing.
+    time_to_empty = plausible_time(time_to_empty)
+    time_to_full = plausible_time(time_to_full)
 
     return {
         "level": level,
@@ -938,6 +943,16 @@ def _hm(seconds: int | None) -> str:
     return "%dh %02dm" % (seconds // 3600, seconds % 3600 // 60)
 
 
+MAX_ESTIMATE_S = 48 * 3600
+
+
+def plausible_time(seconds):
+    """A time estimate in seconds, or None past two days or at nothing."""
+    if not seconds or seconds <= 0 or seconds > MAX_ESTIMATE_S:
+        return None
+    return seconds
+
+
 def cmd_list() -> int:
     result = probe()
     lap = result["laptop"]
@@ -968,13 +983,13 @@ def cmd_list() -> int:
     if not lap and not pods and not result["devices"]:
         print("No batteries found.")
     if result["needsAccess"]:
-        print("\nNo access to " + ", ".join(result["needsAccess"]) + ". Run: sudo %s install-udev" % os.path.realpath(__file__))
+        print("\nNo access to " + ", ".join(result["needsAccess"]) + ". Run: pkexec %s install-udev" % os.path.realpath(__file__))
     return 0
 
 
 def cmd_install_udev() -> int:
     if os.geteuid() != 0:
-        print("install-udev must run as root (sudo or pkexec).", file=sys.stderr)
+        print("install-udev must run as root (pkexec).", file=sys.stderr)
         return 1
     if os.path.exists(UDEV_LEGACY):
         os.remove(UDEV_LEGACY)
@@ -983,6 +998,19 @@ def cmd_install_udev() -> int:
     subprocess.run(["udevadm", "control", "--reload-rules"], check=False)
     subprocess.run(["udevadm", "trigger", "--subsystem-match=hidraw", "--action=change"], check=False)
     print("Installed " + UDEV_DEST)
+    return 0
+
+
+def cmd_uninstall_udev() -> int:
+    if os.geteuid() != 0:
+        print("uninstall-udev must run as root (pkexec).", file=sys.stderr)
+        return 1
+    removed = [p for p in (UDEV_DEST, UDEV_LEGACY) if os.path.exists(p)]
+    for p in removed:
+        os.remove(p)
+    subprocess.run(["udevadm", "control", "--reload-rules"], check=False)
+    subprocess.run(["udevadm", "trigger", "--subsystem-match=hidraw", "--action=change"], check=False)
+    print("Removed " + ", ".join(removed) if removed else "Nothing to remove")
     return 0
 
 
@@ -1116,6 +1144,8 @@ def main(argv: list[str]) -> int:
         return cmd_list()
     if cmd == "install-udev":
         return cmd_install_udev()
+    if cmd == "uninstall-udev":
+        return cmd_uninstall_udev()
     if cmd == "badge":
         return cmd_badge(argv[2:])
     print(__doc__.strip(), file=sys.stderr)

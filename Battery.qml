@@ -63,6 +63,7 @@ Item {
     settle.stop()
     if (Style.reduceMotion || !known) { shown = known ? level : 0; return }
     shown = 0
+    fillTo.to = level
     fillIn.start()
   }
 
@@ -82,25 +83,33 @@ Item {
   onLiveChanged: if (live) enter()
   Component.onCompleted: { if (live) enter(); else shown = known ? level : 0 }
 
+  // Slides to the level as it is now. The animation's end is set before it
+  // starts: bound to `level`, it would start toward the old level, since this
+  // runs before the binding catches up.
+  function slide() {
+    settle.stop()
+    settle.to = level
+    settle.start()
+  }
+
   onLevelChanged: {
     if (fillIn.running) return
     if (Style.reduceMotion || !live) { shown = level; return }
-    settle.restart()
+    slide()
   }
 
   SequentialAnimation {
     id: fillIn
     PauseAnimation { duration: Style.duration(battery.delay) }
-    NumberAnimation { target: battery; property: "shown"; to: battery.level; duration: Style.duration(680); easing.type: Easing.OutCubic }
+    NumberAnimation { id: fillTo; target: battery; property: "shown"; duration: Style.duration(680); easing.type: Easing.OutCubic }
     // The level may have moved on while it filled in.
-    ScriptAction { script: if (battery.shown !== battery.level) settle.restart() }
+    ScriptAction { script: if (battery.shown !== battery.level) battery.slide() }
   }
 
   NumberAnimation {
     id: settle
     target: battery
     property: "shown"
-    to: battery.level
     duration: Style.duration(420)
     easing.type: Easing.OutCubic
   }

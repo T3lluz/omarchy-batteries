@@ -101,104 +101,30 @@ PopupWindow {
         id: rowRepeater
         model: card.rows
 
-        // One battery: tinted in its room's colour, as in the panel.
-        Rectangle {
-          id: row
+        HoverRow {
           required property var modelData
           required property int index
-          // As wide as it needs to be for its name and note on one line: the
-          // name and every fixed column beside it.
-          readonly property real need: icon.x + icon.width + Style.space(6) + name.implicitWidth + Style.space(6)
-            + markSlot.width + Style.space(5) + cells.width + Style.space(8) + level.width + Style.space(6)
-          readonly property color tone: !modelData.stale && Model.isLow(modelData, card.lowThreshold) ? Commons.Color.urgent : card.toneOf(modelData.tone)
-          readonly property string mark: Model.markIcon(modelData, card.lowThreshold)
-
+          entry: modelData
+          order: index
           width: list.width
-          height: Math.max(name.implicitHeight, Style.space(14)) + Style.space(6) * 2
-          radius: Style.cornerRadius
-          color: Qt.rgba(tone.r, tone.g, tone.b, 0.08)
-          opacity: modelData.stale ? 0.6 : 1
-
-          PixelIcon {
-            id: icon
-            x: Style.space(6)
-            anchors.verticalCenter: parent.verticalCenter
-            name: row.modelData.icon
-            size: Style.font.body
-            play: card.shows
-            delay: row.index * 70
-            color: row.tone
-          }
-
-          Words {
-            id: name
-            anchors.left: icon.right
-            anchors.leftMargin: Style.space(6)
-            anchors.right: markSlot.left
-            anchors.rightMargin: Style.space(6)
-            anchors.verticalCenter: parent.verticalCenter
-            text: Model.keepTogether(row.modelData.name + (row.modelData.note ? "  " + row.modelData.note : ""))
-            color: card.foreground
-            family: card.fontFamily
-            size: Style.font.bodySmall
-          }
-
-          // The mark (charging, on a charger, low) in a column of its own that
-          // is there on every row, empty or not, so the batteries and figures
-          // stay in one place.
-          Item {
-            id: markSlot
-            anchors.right: cells.left
-            anchors.rightMargin: Style.space(5)
-            anchors.verticalCenter: parent.verticalCenter
-            width: markIcon.implicitWidth
-            height: markIcon.implicitHeight
-
-            PixelIcon {
-              id: markIcon
-              visible: row.mark !== ""
-              name: row.mark || "zap"
-              size: Style.font.body
-              color: row.tone
-              play: card.shows
-              delay: row.index * 70 + 120
-            }
-          }
-
-          Battery {
-            id: cells
-            anchors.right: level.left
-            anchors.rightMargin: Style.space(8)
-            anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(54)
-            implicitHeight: Style.space(9)
-            small: true
-            segments: 5
-            level: Model.hasLevel(row.modelData.level) ? row.modelData.level : 0
-            known: Model.hasLevel(row.modelData.level)
-            tone: row.tone
-            foreground: card.foreground
-          }
-
-          // The level, right-aligned in a column as wide as "100%", so the
-          // figures line up.
-          Item {
-            id: level
-            anchors.right: parent.right
-            anchors.rightMargin: Style.space(6)
-            anchors.verticalCenter: parent.verticalCenter
-            width: Model.pixelText("100%").width * figure.cell
-            height: figure.implicitHeight
-
-            PixelText {
-              id: figure
-              anchors.right: parent.right
-              text: Model.percent(row.modelData.level)
-              unit: card.unit
-              color: Model.hasLevel(row.modelData.level) ? card.foreground : Qt.darker(card.foreground, 1.5)
-            }
-          }
+          foreground: card.foreground
+          fontFamily: card.fontFamily
+          toneOf: card.toneOf
+          lowThreshold: card.lowThreshold
+          unit: card.unit
+          shows: card.shows
         }
+      }
+
+      // What the other buttons do; a click opens the panel.
+      Words {
+        x: Style.space(6)
+        width: parent.width - x * 2
+        topPadding: Style.space(2)
+        text: Model.HOVER_HINT
+        color: Qt.tint(card.foreground, Qt.rgba(Commons.Color.tooltip.background.r, Commons.Color.tooltip.background.g, Commons.Color.tooltip.background.b, 0.4))
+        fontFamily: card.fontFamily
+        step: "small"
       }
     }
   }

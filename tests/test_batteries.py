@@ -274,6 +274,16 @@ class LaptopTest(unittest.TestCase):
         self.bat()
         lap = pb.laptop({"BAT0": {"timeToEmpty": 6000}}, self.root)
         self.assertEqual(lap["timeToEmpty"], 6000)
+        # A trickle's estimate of days says nothing and is left out.
+        lap = pb.laptop({"BAT0": {"timeToEmpty": 545 * 3600}}, self.root)
+        self.assertIsNone(lap["timeToEmpty"])
+
+    def test_plausible_time(self):
+        self.assertEqual(pb.plausible_time(3600), 3600)
+        self.assertEqual(pb.plausible_time(48 * 3600), 48 * 3600)
+        self.assertIsNone(pb.plausible_time(48 * 3600 + 1))
+        self.assertIsNone(pb.plausible_time(0))
+        self.assertIsNone(pb.plausible_time(None))
 
     def test_charging_to_limit(self):
         self.bat(status="Charging", charge_control_end_threshold=80)

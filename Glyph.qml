@@ -24,7 +24,11 @@ Item {
   property int play: 0
   property bool playOnChange: false
 
-  readonly property string pixel: Model.pixelFor(icon)
+  // The notice it sits in is busy (an update under way, the password
+  // prompt up): the refresh arrows turn in quarters until it is done, since a
+  // smooth spin would smear pixel art.
+  readonly property bool busy: !!parent && parent.busy === true
+  readonly property string pixel: busy ? "reload" : Model.pixelFor(icon)
   property int cues: 0
 
   implicitWidth: size
@@ -55,7 +59,8 @@ Item {
     color: glyph.color
     play: glyph.play + glyph.cues
     playOnChange: glyph.playOnChange
-    loop: glyph.pixel === "warning-diamond"
+    act: glyph.busy ? "reload-busy" : glyph.pixel
+    loop: glyph.busy || glyph.pixel === "warning-diamond"
   }
 
   Text {
@@ -64,7 +69,9 @@ Item {
     textFormat: Text.PlainText
     text: glyph.icon
     color: glyph.color
-    font.family: glyph.fontFamily
+    // The typed glyphs are Nerd Font icons, which only the shell's font has;
+    // the panel's Monocraft would leave them to a random fallback.
+    font.family: Style.font.family
     font.pixelSize: glyph.size
   }
 }

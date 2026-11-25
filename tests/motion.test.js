@@ -5,7 +5,7 @@ const assert = require("assert")
 
 const load = (file, names) => new Function(
   fs.readFileSync(path.join(__dirname, "..", file), "utf8").replace(/^\.pragma library\s*/, "") + "\nreturn { " + names + " }")()
-const Motion = load("Motion.js", "LOOP_MS, ACTS, LOOPS, iconOf, has, length, frameAt, pose, loopTime, partAt")
+const Motion = load("Motion.js", "LOOP_MS, ACTS, LOOPS, iconOf, has, length, frameAt, pose, loopTime, loopWait, partAt")
 const { icons } = load("Pixels.js", "icons")
 
 const cells = rects => {
@@ -69,6 +69,23 @@ for (const [act, period] of Object.entries(Motion.LOOPS)) {
   assert.ok(Motion.loopTime(act, -3) >= 0)
 }
 assert.strictEqual(Motion.loopTime("laptop", 100), -1)
+
+// A looped icon sleeps until its frame next changes: walking the waits visits
+// every frame of each round once, then the rest, and never stalls.
+for (const act of Object.keys(Motion.LOOPS)) {
+  const frames = Motion.ACTS[act]
+  let now = 0, seen = []
+  while (now < Motion.LOOP_MS) {
+    const wait = Motion.loopWait(act, now)
+    assert.ok(wait >= 1, act + " waits")
+    seen.push(Motion.frameAt(act, Motion.loopTime(act, now)))
+    now += wait
+  }
+  const rounds = Motion.LOOP_MS / Motion.LOOPS[act]
+  assert.strictEqual(seen.length, rounds * (frames.length + 1), act + " visits each frame once a round")
+  assert.strictEqual(now, Motion.LOOP_MS, act + " ends on the clock's round")
+}
+assert.strictEqual(Motion.loopWait("laptop", 100), -1)
 
 // Parts at rest, hidden, shown and moved.
 assert.deepStrictEqual(Motion.partAt({}, "wheel", false), { x: 0, y: 0, on: true })

@@ -21,5 +21,7 @@ jobs:
         run: |
           node tests/model.test.js
           node tests/update.test.js
+          node tests/motion.test.js
+          node tests/rooms.test.js
       - name: Reader tests
         run: python3 -B -m unittest discover tests

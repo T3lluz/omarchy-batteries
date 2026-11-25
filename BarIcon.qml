@@ -1,12 +1,14 @@
 import QtQuick
 import QtQuick.Effects
+import qs.Commons
 import "Model.js" as Model
 
-// A bar item's device icon, in pixel art. While it is on a charger, a dark
-// band rises through it every few seconds and the icon stays at full
-// brightness between sweeps. That includes full or held at a limit, so a
-// connected charger always shows, on the device itself rather than as an
-// extra glyph. The band is pixel art too: hard edged, a whole cell at a time.
+// A bar item's device icon, in pixel art. While charge flows in, a dark band
+// rises through it every few seconds and the icon stays at full brightness
+// between sweeps. On a charger but full or held at a limit, the band holds
+// still over the middle, so a connected charger always shows, on the device
+// itself rather than as an extra glyph; so it does with reduced motion. The
+// band is pixel art too: hard edged, a whole cell at a time.
 Item {
   id: root
   // A name from Pixels.js.
@@ -15,8 +17,13 @@ Item {
   property int unit: 1
   property color color: "white"
   property bool powered: false
+  // Charge flowing in, which sweeps the band; on a charger without it, the
+  // band holds still.
+  property bool charging: false
+  readonly property bool sweeping: powered && charging && !Style.reduceMotion
   // 0 to 1: how far the band has risen, from below the icon to above it.
-  property real flow: 0
+  property real flow: Model.CHARGE_HOLD_FLOW
+  onSweepingChanged: if (!sweeping) flow = Model.CHARGE_HOLD_FLOW
 
   implicitWidth: art.implicitWidth
   implicitHeight: art.implicitHeight
@@ -50,9 +57,9 @@ Item {
     clip: true
 
     readonly property real cell: art.width / 12
-    readonly property int bandCells: 3
+    readonly property int bandCells: Model.CHARGE_BAND_CELLS
 
-    readonly property real bandY: Math.round((1 - root.flow) * (12 + bandCells) - bandCells) * cell
+    readonly property real bandY: Math.round((1 - root.flow) * Model.CHARGE_STEPS - bandCells) * cell
 
     // Solid above and below the band, never under it: a see-through band
     // laid over solid white would come out solid.
@@ -102,9 +109,9 @@ Item {
   Timer {
     repeat: true
     triggeredOnStart: true
-    running: root.powered && root.visible
+    running: root.sweeping && root.visible
     onTriggered: {
-      const step = Model.chargeStep(Date.now(), 80)
+      const step = Model.chargeStep(Date.now())
       root.flow = step.flow
       interval = step.wait
     }

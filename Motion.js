@@ -81,6 +81,9 @@ var ACTS = {
   "plug": [[110, { head: [0, -1] }], [120, {}], [110, { head: [0, -1] }]],
   // A full turn in quarters.
   "reload": [[80, { turn: 1 }], [80, { turn: 2 }], [100, { turn: 3 }]],
+  // Something under way (a notice that is busy): the arrows go round in
+  // quarters, a step every 200 ms, for as long as it lasts. Looped.
+  "reload-busy": [[200, { turn: 1 }], [200, { turn: 2 }], [200, { turn: 3 }]],
   // The hub presses in, twice.
   "settings-cog": [[100, { hub: 0, pressed: 1 }], [90, {}], [100, { hub: 0, pressed: 1 }]],
   "arrow-left": [[90, { arrow: [-1, 0] }], [90, {}], [90, { arrow: [-1, 0] }]],
@@ -119,12 +122,14 @@ var ACTS = {
 
 // The icon an act moves, where it is not the act's own name.
 var ACT_ICONS = {
+  "reload-busy": "reload",
   "airpods-left": "airpods",
   "airpods-right": "airpods"
 }
 
 // The period of each looped act, in ms. Each divides LOOP_MS.
 var LOOPS = {
+  "reload-busy": 800,
   "zap": 2400,
   "battery-low": 2400,
   "warning-diamond": 4800
@@ -175,6 +180,22 @@ function loopTime(act, nowMs) {
   var t = nowMs % LOOP_MS
   if (t < 0) t += LOOP_MS
   return t % period
+}
+
+// How long from `nowMs` until a looped act's frame next changes, so one
+// timer can sleep until then instead of drawing every frame. -1 for an act
+// that does not loop.
+function loopWait(act, nowMs) {
+  var period = LOOPS[act]
+  var frames = ACTS[act]
+  if (!period || !frames) return -1
+  var t = loopTime(act, nowMs)
+  var at = 0
+  for (var i = 0; i < frames.length; i++) {
+    at += frames[i][0]
+    if (t < at) return at - t
+  }
+  return period - t
 }
 
 // Where a part is drawn in a pose: { x, y, on }, x and y in 12-grid cells.

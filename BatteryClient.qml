@@ -27,6 +27,9 @@ Item {
   property bool loaded: false
   property string errorText: ""
   property bool installing: false
+  // The password prompt was dismissed or refused (pkexec's 126 and 127), so
+  // the panel can say so instead of waiting on nothing.
+  property bool accessDeclined: false
   property real lastPollMs: 0
   property bool pollAgain: false
 
@@ -68,13 +71,17 @@ Item {
   function installAccess() {
     if (installProc.running) return
     installing = true
+    accessDeclined = false
     installProc.running = true
   }
 
   function handleProbe(out, err) {
     var parsed = Model.parseProbe(out)
     if (!parsed) {
-      errorText = String(err || "").trim().split("\n").pop() || "bin/batteries gave no answer"
+      // What went wrong goes to the log; the panel says it plainly.
+      var why = String(err || "").trim()
+      if (why) console.warn("batteries: probe failed: " + why)
+      errorText = "Couldn't read the batteries"
       loaded = true
       return
     }
@@ -373,8 +380,9 @@ Item {
     id: installProc
     running: false
     command: ["pkexec", root.scriptPath, "install-udev"]
-    onExited: {
+    onExited: function(exitCode) {
       root.installing = false
+      root.accessDeclined = exitCode === 126 || exitCode === 127
       hotplugDebounce.restart()
     }
   }

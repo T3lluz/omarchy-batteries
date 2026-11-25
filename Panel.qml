@@ -31,12 +31,14 @@ Panel {
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   // A theme's "red" can be a dark grey. Low must not read quieter than normal.
   readonly property color lowTone: Model.contrast(urgent, Commons.Color.background) >= 3.5 ? urgent : foreground
-  readonly property color dim: Qt.darker(foreground, 1.5)
-  // Text in Monocraft (BarWidget.textFont). The block digits keep the
-  // shell's font's character grid, and typed glyphs its Nerd Font.
+  // Dim as the text tinted toward the background: darkening vanished on a
+  // light theme, where the text is already dark.
+  readonly property color dim: Qt.tint(foreground, Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.4))
+  // Text in the plugin's Monocraft (BarWidget.textFont, "Monocraft
+  // Batteries"), drawn by MonoText. The block digits keep the shell's font's
+  // character grid, and typed glyphs its Nerd Font.
   readonly property string shellFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string fontFamily: hostWidget && hostWidget.textFont ? hostWidget.textFont : shellFamily
-  // The panel's own text is Words.qml, which keeps Monocraft sharp.
 
   readonly property var updater: client ? client.updater : null
   readonly property var laptop: client ? client.laptop : null
@@ -104,6 +106,63 @@ Panel {
   property string openRoom: ""
   function toggleRoom(key) { openRoom = openRoom === key ? "" : key }
 
+  // ------------------------------------------------------------- cursor
+
+  // One cursor for keyboard and pointer, on a room by its key. j and k (or
+  // the arrows) move it, enter opens the room under it. Only keyboard moves
+  // scroll: scrolling on hover would slide the next room under a resting
+  // pointer.
+  property string cursorKey: ""
+  property bool cursorActive: false
+  property bool keyboardCursor: false
+
+  readonly property var cursorTargets: {
+    var keys = []
+    if (setupOpen) return keys
+    if (laptop) keys.push("laptop")
+    if (airpods) keys.push("airpods")
+    for (var i = 0; i < peripherals.length; i++) keys.push(peripherals[i].id)
+    return keys
+  }
+  onCursorTargetsChanged: if (cursorKey !== "" && cursorTargets.indexOf(cursorKey) === -1) cursorKey = cursorTargets.length > 0 ? cursorTargets[0] : ""
+
+  function moveCursor(delta) {
+    var keys = cursorTargets
+    if (keys.length === 0) return
+    var idx = keys.indexOf(cursorKey)
+    if (!cursorActive || idx === -1) idx = delta > 0 ? -1 : keys.length
+    keyboardCursor = true
+    cursorActive = true
+    cursorKey = keys[Math.max(0, Math.min(keys.length - 1, idx + delta))]
+  }
+
+  function hover(key) {
+    keyboardCursor = false
+    cursorActive = true
+    cursorKey = key
+  }
+
+  // The pointer left what it lit. The key stays, so j and k pick up from
+  // there; a keyboard move since keeps its own outline.
+  function unhover(key) {
+    if (!keyboardCursor && cursorKey === key) cursorActive = false
+  }
+
+  function scrollIntoView(item) {
+    if (!item || !panelFlick || !keyboardCursor) return
+    var p = item.mapToItem(column, 0, 0)
+    if (p.y < panelFlick.contentY) panelFlick.contentY = Math.max(0, p.y - Style.space(8))
+    else if (p.y + item.height > panelFlick.contentY + panelFlick.height)
+      panelFlick.contentY = Math.min(panelFlick.contentHeight - panelFlick.height, p.y + item.height - panelFlick.height + Style.space(8))
+  }
+
+  // Escape backs out one step: an open room, then the settings, then the panel.
+  function back() {
+    if (openRoom !== "") toggleRoom(openRoom)
+    else if (setupOpen) setupOpen = false
+    else close()
+  }
+
   // ------------------------------------------------------------- motion
 
   // One clock for everything that moves, ticking only while something does:
@@ -151,7 +210,7 @@ Panel {
   readonly property var phrases: {
     if (setupOpen) return ["Changes save as you make them"]
     if (!client || !client.loaded) return ["Reading batteries"]
-    if (client.errorText) return ["Can't read batteries"]
+    if (client.errorText) return ["Trying again soon"]
     return Model.heroPhrases(batteries, lowThreshold)
   }
   readonly property bool phrasesTurn: phrases.length > 1
@@ -214,6 +273,7 @@ Panel {
   }
 
   function pickOn(pick) {
+    if (!pick || (!pick.device && !pick.key)) return false
     if (pick.device) return Model.inBar(pick.device, barDevices)
     return setting(pick.key, pick.fallback) === true
   }
@@ -224,7 +284,7 @@ Panel {
   }
 
   onOpenedChanged: {
-    if (!opened) { setupOpen = false; openRoom = ""; return }
+    if (!opened) { setupOpen = false; openRoom = ""; cursorActive = false; cursorKey = ""; return }
     phraseIndex = 0
     typed = Style.reduceMotion ? caption.length : 0
     nowSec = Date.now() / 1000
@@ -265,12 +325,19 @@ Panel {
     property real rise: 0
     property real fade: 1
     readonly property bool expanded: root.openRoom === key
+    // The keyboard's cursor is on it: an outline as well as the tint, so it
+    // reads apart from the pointer.
+    readonly property bool keyed: root.cursorActive && root.keyboardCursor && root.cursorKey === key
     default property alias content: inner.data
 
     width: parent ? parent.width : 0
     implicitHeight: inner.implicitHeight + root.roomPad * 2
     radius: Style.cornerRadius
-    color: Qt.rgba(tone.r, tone.g, tone.b, area.containsMouse || expanded ? 0.11 : 0.065)
+    color: Qt.rgba(tone.r, tone.g, tone.b, area.containsMouse || expanded || keyed ? 0.11 : 0.065)
+    border.width: keyed ? Math.max(1, Style.space(1)) : 0
+    border.color: Qt.rgba(tone.r, tone.g, tone.b, 0.6)
+
+    onKeyedChanged: if (keyed) root.scrollIntoView(room)
     opacity: (stale ? 0.6 : 1) * fade
     transform: Translate { y: room.rise }
 
@@ -310,14 +377,17 @@ Panel {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onEntered: room.acts++
+      onEntered: { root.hover(room.key); room.acts++ }
       onPositionChanged: function(mouse) {
         for (var i = 0; i < room.cells.length; i++) {
           var p = room.cells[i].mapFromItem(room, mouse.x, mouse.y)
           room.cells[i].hover(p.x, p.y)
         }
       }
-      onExited: { for (var i = 0; i < room.cells.length; i++) room.cells[i].dent = null }
+      onExited: {
+        root.unhover(room.key)
+        for (var i = 0; i < room.cells.length; i++) room.cells[i].dent = null
+      }
       onClicked: function(mouse) {
         // The clock first: a ripple is stamped with it.
         root.wake(Model.BATTERY.RIPPLE_MS + 200)
@@ -354,6 +424,13 @@ Panel {
     Behavior on height { NumberAnimation { duration: Style.duration(280); easing.type: Easing.OutCubic } }
     Behavior on opacity { NumberAnimation { duration: Style.duration(220); easing.type: Easing.OutCubic } }
 
+    // A click on a reading stays here, so only the room's header closes it;
+    // the switches above take their own.
+    MouseArea {
+      anchors.fill: parent
+      acceptedButtons: Qt.AllButtons
+    }
+
     Column {
       id: drawerColumn
       width: parent.width
@@ -373,6 +450,8 @@ Panel {
     property color tone: root.foreground
     property bool showFigure: true
     property var value: null
+    // The level the figure counts up to (BigFigure.target).
+    property var target: value
     property string figureMark: ""
     property bool charging: false
     property bool expanded: false
@@ -417,16 +496,15 @@ Panel {
           width: Math.min(implicitWidth, parent.width - chevron.width - parent.spacing)
           text: head.title
           color: root.foreground
-          family: root.fontFamily
-          size: Style.font.body
-          font.bold: true
+          fontFamily: root.fontFamily
+          step: "body"
         }
 
         // Flips when the room opens; turned pixel art would smear on the way.
         // Beside the first line, when a long name takes two.
         PixelIcon {
           id: chevron
-          y: Math.round((titleText.lineSize - height) / 2 * titleText.dpr) / titleText.dpr
+          y: Math.round((titleText.line - height) / 2 * titleText.dpr) / titleText.dpr
           name: "chevron-down"
           size: Style.font.caption
           color: root.dim
@@ -440,8 +518,8 @@ Panel {
         value: head.status
         delay: head.delay
         color: root.dim
-        family: root.fontFamily
-        size: Style.font.caption
+        fontFamily: root.fontFamily
+        step: "small"
       }
     }
 
@@ -451,6 +529,7 @@ Panel {
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       value: head.value
+      target: head.target
       tone: head.tone
       foreground: root.foreground
       mark: head.figureMark
@@ -510,10 +589,9 @@ Panel {
     Words {
       id: pairLabel
       text: pair.label
-      color: root.foreground
-      opacity: 0.6
-      family: root.fontFamily
-      size: Style.font.bodySmall
+      color: root.dim
+      fontFamily: root.fontFamily
+      step: "small"
     }
 
     Decode {
@@ -524,8 +602,8 @@ Panel {
       value: pair.value
       delay: pair.delay
       color: root.foreground
-      family: root.fontFamily
-      size: Style.font.bodySmall
+      fontFamily: root.fontFamily
+      step: "small"
     }
   }
 
@@ -552,16 +630,17 @@ Panel {
       return true
     }
 
+    // Over the count: the facts are new after every poll.
     Repeater {
       id: pairs
-      model: factGrid.facts
+      model: factGrid.facts.length
 
       InfoPair {
-        required property var modelData
         required property int index
+        readonly property var fact: factGrid.facts[index] || ({})
         width: factGrid.cellWidth
-        label: modelData.label
-        value: modelData.value
+        label: fact.label || ""
+        value: fact.value || ""
         delay: factGrid.delay + index * 40
       }
     }
@@ -578,21 +657,22 @@ Panel {
     width: parent ? parent.width : 0
     spacing: Style.space(6)
 
+    // Over the count: the list is new after every poll.
     Repeater {
-      model: picks.list
+      model: picks.list.length
 
       SwitchRow {
-        required property var modelData
+        required property int index
+        readonly property var pick: picks.list[index] || ({})
         width: picks.width
-        // No icon: the kit's are Nerd Font glyphs, the rooms' are Tabler
-        // outlines, and the label says it all.
+        // No icon: the label says it all.
         icon: ""
-        label: modelData.inRoom
-        checked: root.pickOn(modelData)
+        label: pick.inRoom || ""
+        checked: root.pickOn(pick)
         foreground: root.foreground
         accent: root.accent
         fontFamily: root.fontFamily
-        onToggled: root.togglePick(modelData)
+        onToggled: root.togglePick(pick)
       }
     }
   }
@@ -635,14 +715,14 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
         text: cell.label
         color: root.foreground
-        family: root.fontFamily
-        size: Style.font.bodySmall
-        font.bold: true
+        fontFamily: root.fontFamily
+        step: "small"
       }
     }
 
     BigFigure {
       value: cell.seen ? cellPad.shown : null
+      target: cell.seen ? cell.pod.level : null
       tone: cell.tone
       foreground: root.foreground
       mark: cell.seen ? root.markOf(cell.pod) : ""
@@ -673,8 +753,8 @@ Panel {
       value: Model.podPartState(cell.key, cell.pod, root.nowSec)
       delay: cell.delay + 80
       color: root.dim
-      family: root.fontFamily
-      size: Style.font.caption
+      fontFamily: root.fontFamily
+      step: "small"
     }
   }
   KeyboardPanel {
@@ -685,19 +765,29 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
+    contentHeight: panel.fittedContentHeight(wanted, Style.space(720))
+
+    // What the content needs, before the panel's limit.
+    readonly property real wanted: column.implicitHeight
+    // Whether it is taller than the panel may be, decided from that limit
+    // rather than from the scroll area's height: while a room opens the
+    // window grows a frame behind its content and the height is rounded, so
+    // that comparison had the scrollbar flash in and out.
+    readonly property bool overflowing: contentHeight < wanted + verticalContentInset - 1
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      onCloseRequested: root.close()
+      onMoveRequested: function(dx, dy) { if (!root.setupOpen) root.moveCursor(dy !== 0 ? dy : dx) }
+      onActivateRequested: if (!root.setupOpen && root.cursorActive && root.cursorKey !== "") root.toggleRoom(root.cursorKey)
+      onCloseRequested: root.back()
       onTabRequested: function(direction) {
         if (root.bar && typeof root.bar.switchPanelFrom === "function") root.bar.switchPanelFrom(root.hostWidget || root, direction)
       }
       onTextKey: function(t) {
         var key = t.toLowerCase()
         if (key === "r") root.readNow()
-        else if (key === "c" || key === ",") root.setupOpen = !root.setupOpen
+        else if (key === "," || key === "c") root.setupOpen = !root.setupOpen
       }
 
       Flickable {
@@ -707,8 +797,32 @@ Panel {
         contentHeight: column.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        interactive: contentHeight > height
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        flickableDirection: Flickable.VerticalFlick
+        interactive: panel.overflowing
+        // A room closing can leave the view past the end; bring it back.
+        onContentHeightChanged: {
+          var end = Math.max(0, contentHeight - height)
+          if (contentY > end) contentY = end
+        }
+        // Always showing when there is more, since the clip can land between
+        // two rooms and make the panel look finished. A thin bar laid over
+        // the rooms' right edge, so it never narrows them: making room for it
+        // reflowed every room each time it came and went.
+        ScrollBar.vertical: ScrollBar {
+          id: panelScroll
+          policy: panel.overflowing ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+          padding: 0
+          rightPadding: Style.space(2)
+          topPadding: Style.space(2)
+          bottomPadding: Style.space(2)
+          background: Item {}
+          contentItem: Rectangle {
+            implicitWidth: Math.max(2, Style.space(3))
+            radius: Style.cornerRadius > 0 ? width / 2 : 0
+            color: root.foreground
+            opacity: panelScroll.pressed ? 0.6 : panelScroll.hovered ? 0.45 : 0.3
+          }
+        }
 
         Column {
           id: column
@@ -752,19 +866,39 @@ Panel {
                 width: parent.width
                 text: root.setupOpen ? "Settings" : "Batteries"
                 color: root.foreground
-                family: root.fontFamily
-                size: Style.font.title
-                font.bold: true
+                fontFamily: root.fontFamily
+                step: "title"
               }
 
-              Words {
+              // The prompt sign, then the line, hanging under its first word
+              // when it wraps. The whole line is laid out from the first
+              // character and only revealed as it types, the rest drawn clear
+              // (Model.revealLine), so a word never jumps to the next line as
+              // it grows.
+              Item {
                 width: parent.width
-                // The prompt sign in the accent, the line in the dim colour.
-                // Monocraft's own > and _, as the laptop's screen shows them.
-                text: "> " + root.caption.substring(0, root.typed) + (root.cursorOn || root.typed < root.caption.length ? "_" : " ")
-                color: !root.setupOpen && root.heroBattery.low ? root.lowTone : Qt.darker(root.foreground, 1.3)
-                family: root.fontFamily
-                size: Style.font.caption
+                height: promptLine.implicitHeight
+
+                Words {
+                  id: promptSign
+                  text: "\u203A"
+                  color: promptLine.color
+                  fontFamily: root.fontFamily
+                  step: "small"
+                }
+
+                Words {
+                  id: promptLine
+                  anchors.left: promptSign.right
+                  // One character's width, as a space would be.
+                  anchors.leftMargin: promptSign.advance
+                  anchors.right: parent.right
+                  textFormat: Text.StyledText
+                  text: Model.revealLine(Model.keepTogether(root.caption), root.typed, root.cursorOn)
+                  color: !root.setupOpen && root.heroBattery.low ? root.lowTone : root.dim
+                  fontFamily: root.fontFamily
+                  step: "small"
+                }
               }
             }
 
@@ -798,7 +932,7 @@ Panel {
               PanelActionButton {
                 id: gearButton
                 iconText: ""
-                tooltipText: root.setupOpen ? "Back to batteries (c)" : "Bar, alerts and updates (c)"
+                tooltipText: root.setupOpen ? "Back to batteries (esc)" : "Bar, alerts and updates (,)"
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 onClicked: root.setupOpen = !root.setupOpen
@@ -836,7 +970,8 @@ Panel {
                 icon: Model.GLYPHS.key
                 text: {
                   if (root.client && root.client.installing) return "Waiting for your password…"
-                  if (root.client && root.client.udevInstalled) return "Access granted. Replug the device if this stays."
+                  if (root.client && root.client.accessDeclined) return "Access not granted. A mouse or headset needs it to be read."
+                  if (root.client && root.client.udevInstalled) return "Access granted. If it still isn't read, unplug the receiver and plug it back in."
                   return "A mouse or headset needs access to be read."
                 }
                 actionLabel: "Grant access"
@@ -897,6 +1032,7 @@ Panel {
                 delay: laptopRoom.delay + 120
                 charging: !!root.laptop && root.laptop.charging
                 value: root.laptop ? laptopPad.shown : null
+                target: root.laptop ? root.laptop.level : null
                 figureMark: root.markOf(root.laptop)
               }
 
@@ -939,7 +1075,7 @@ Panel {
               readonly property var headset: isHeadset && root.airpods.headset ? Object.assign({ stale: root.airpods.stale }, root.airpods.headset) : null
               visible: !!root.airpods
               key: "airpods"
-              stale: !!root.airpods && root.airpods.stale
+              stale: !!root.airpods && root.airpods.stale === true
               tone: root.toneOf(Model.kindTone("airpods"))
               delay: root.laptop ? 70 : 0
               cells: isHeadset ? [headsetPad] : [leftCell.pad, rightCell.pad, caseCell.pad]
@@ -955,6 +1091,7 @@ Panel {
                 charging: !!podsRoom.headset && podsRoom.headset.charging
                 showFigure: podsRoom.isHeadset
                 value: podsRoom.headset ? headsetPad.shown : null
+                target: podsRoom.headset ? podsRoom.headset.level : null
                 figureMark: root.markOf(podsRoom.headset)
               }
 
@@ -1031,38 +1168,42 @@ Panel {
             }
 
             // ----------------------------------------------------- devices
+            // Over the count, not the list: every poll builds a new list, and a
+            // Repeater handed one rebuilds every room, so a charging mouse
+            // played its room's whole opening again at each percent.
             Repeater {
-              model: root.peripherals
+              model: root.peripherals.length
 
               Room {
                 id: deviceRoom
-                required property var modelData
                 required property int index
-                stale: modelData.stale === true
-                key: modelData.id
-                tone: root.roomTone(modelData.kind, modelData)
+                readonly property var device: root.peripherals[index] || ({ id: "", kind: "" })
+                stale: device.stale === true
+                key: device.id
+                tone: root.roomTone(device.kind, device)
                 cells: [devicePad]
                 delay: ((root.laptop ? 1 : 0) + (root.airpods ? 1 : 0) + index) * 70
 
                 RoomHeader {
-                  title: Model.deviceTitle(deviceRoom.modelData)
-                  status: Model.subtitle(deviceRoom.modelData)
-                  icon: Model.kindPixel(deviceRoom.modelData.kind)
+                  title: Model.deviceTitle(deviceRoom.device)
+                  status: Model.subtitle(deviceRoom.device)
+                  icon: Model.kindPixel(deviceRoom.device.kind)
                   tone: deviceRoom.tone
                   expanded: deviceRoom.expanded
                   play: deviceRoom.acts
                   delay: deviceRoom.delay + 120
-                  charging: deviceRoom.modelData.charging === true && !deviceRoom.modelData.stale
-                  value: Model.hasLevel(deviceRoom.modelData.level) ? devicePad.shown : null
-                  figureMark: root.markOf(deviceRoom.modelData)
+                  charging: deviceRoom.device.charging === true && !deviceRoom.device.stale
+                  value: Model.hasLevel(deviceRoom.device.level) ? devicePad.shown : null
+                  target: Model.hasLevel(deviceRoom.device.level) ? deviceRoom.device.level : null
+                  figureMark: root.markOf(deviceRoom.device)
                 }
 
                 Battery {
                   id: devicePad
                   width: parent.width
-                  level: Model.hasLevel(deviceRoom.modelData.level) ? deviceRoom.modelData.level : 0
-                  known: Model.hasLevel(deviceRoom.modelData.level)
-                  charging: deviceRoom.modelData.charging === true && !deviceRoom.modelData.stale
+                  level: Model.hasLevel(deviceRoom.device.level) ? deviceRoom.device.level : 0
+                  known: Model.hasLevel(deviceRoom.device.level)
+                  charging: deviceRoom.device.charging === true && !deviceRoom.device.stale
                   tone: deviceRoom.tone
                   foreground: root.foreground
                   clock: root.clock
@@ -1074,11 +1215,11 @@ Panel {
                   open: deviceRoom.expanded
 
                   Facts {
-                    facts: Model.deviceFacts(deviceRoom.modelData)
+                    facts: Model.deviceFacts(deviceRoom.device)
                   }
 
                   RoomPicks {
-                    room: deviceRoom.modelData.id
+                    room: deviceRoom.device.id
                   }
                 }
               }
@@ -1089,8 +1230,8 @@ Panel {
               width: parent.width
               text: "Wireless mice, keyboards, headsets, controllers and phones show up here."
               color: root.dim
-              family: root.fontFamily
-              size: Style.font.bodySmall
+              fontFamily: root.fontFamily
+              step: "small"
             }
           }
 
@@ -1125,20 +1266,22 @@ Panel {
 
                 readonly property real tileWidth: (width - columnSpacing) / 2
 
+                // Over the count: the list is new after every poll.
                 Repeater {
-                  model: root.barPicks
+                  model: root.barPicks.length
 
                   ToggleTile {
-                    required property var modelData
+                    required property int index
+                    readonly property var pick: root.barPicks[index] || ({})
                     width: barGrid.tileWidth
-                    icon: modelData.icon
-                    label: modelData.label
-                    hint: modelData.hint || ""
-                    checked: root.pickOn(modelData)
+                    icon: pick.icon || ""
+                    label: pick.label || ""
+                    hint: pick.hint || ""
+                    checked: root.pickOn(pick)
                     foreground: root.foreground
                     accent: root.accent
                     fontFamily: root.fontFamily
-                    onToggled: root.togglePick(modelData)
+                    onToggled: root.togglePick(pick)
                   }
                 }
               }
@@ -1178,7 +1321,7 @@ Panel {
 
               SwitchRow {
                 icon: Model.GLYPHS.bell
-                label: "Notify when a device runs low"
+                label: "Notify when low"
                 checked: root.setting("notifyLow", true) === true
                 foreground: root.foreground
                 accent: root.accent

@@ -27,7 +27,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 # The icons the panel draws, by the name Pixelarticons gives them.
 ICONS = [
-    "laptop", "mouse", "keyboard", "headphone", "volume-2", "gamepad", "hand",
+    "mouse", "keyboard", "headphone", "volume-2", "gamepad", "hand",
     "tablet", "pencil", "smartphone", "music", "tv", "power", "battery",
     "battery-low", "battery-medium", "battery-full", "zap", "plug", "reload", "settings-cog",
     "arrow-left", "key", "warning-diamond", "layout", "bell", "percent", "clock",
@@ -37,6 +37,23 @@ ICONS = [
 # Drawn here on a 12-cell grid (each cell two units), in Pixelarticons'
 # weight: one-cell lines, corners cut square.
 CUSTOM = {
+    # Pixelarticons' laptop is two rows short of the square its neighbours
+    # fill, and sat low in the bar beside them. The same drawing, its screen
+    # two rows taller.
+    "laptop": [
+        "............",
+        "..#######...",
+        ".#.......#..",
+        ".#.......#..",
+        ".#.......#..",
+        ".#.......#..",
+        ".#.......#..",
+        ".#.......#..",
+        ".#########..",
+        "#.........#.",
+        "###########.",
+        "............",
+    ],
     # Two buds in outline like the rest: round heads, stems down.
     "airpods": [
         "............",
@@ -384,6 +401,8 @@ def main():
                     for yy in range(y, y + h):
                         for xx in range(x, x + w):
                             g24[yy][xx] = True
+            elif name in CUSTOM:
+                g24 = from_art(art + ["." * 12] * (12 - len(art)))
             else:
                 g24 = from_cells(art)
             parts.append({"id": pid, "extra": True, "g24": rects(g24), "g12": rects(halve(g24))})

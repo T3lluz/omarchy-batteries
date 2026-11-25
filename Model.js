@@ -135,27 +135,6 @@ function hasLevel(level) {
   return level !== null && level !== undefined
 }
 
-// The panel header's battery: the ramps Omarchy's power panel uses, ten steps.
-var BATTERY_RAMP = ["\u{F007A}", "\u{F007B}", "\u{F007C}", "\u{F007D}", "\u{F007E}", "\u{F007F}", "\u{F0080}", "\u{F0081}", "\u{F0082}", "\u{F0079}"]
-var CHARGING_RAMP = ["\u{F089C}", "\u{F0086}", "\u{F0087}", "\u{F0088}", "\u{F089D}", "\u{F0089}", "\u{F089E}", "\u{F008A}", "\u{F008B}", "\u{F0085}"]
-
-function batteryGlyph(level, charging) {
-  if (!hasLevel(level)) return GLYPHS.unknownBattery
-  var step = Math.max(0, Math.min(9, Math.floor(level / 10)))
-  return (charging ? CHARGING_RAMP : BATTERY_RAMP)[step]
-}
-
-// The mark beside a level: a bolt while charge flows in, a plug while a charger
-// is connected but nothing flows (full, or held at a limit), else nothing. An
-// old reading says nothing about the charger now.
-function powerGlyph(item) {
-  if (!item) return ""
-  if (item.stale) return ""
-  if (item.charging) return GLYPHS.bolt
-  if (item.acOnline || item.powered) return GLYPHS.plug
-  return ""
-}
-
 // Parses bin/batteries' JSON. Returns null when it is not that.
 function parseProbe(text) {
   var data
@@ -560,7 +539,7 @@ function barPicks(state) {
   var pods = state ? state.airpods : null
   if (airpodsShown(pods)) {
     picks.push({ key: "barAirpods", room: "airpods", inRoom: pods.isHeadset ? "Level in the bar" : "Emptier bud in the bar", icon: GLYPHS.earbuds, label: "AirPods", hint: (pods.name ? pods.name + ": " : "") + (pods.isHeadset ? "their level" : "the emptier bud") + ", while they are connected", fallback: true })
-    if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", room: "airpods", inRoom: "Case in the bar while open", icon: GLYPHS.airpodsCase, label: "AirPods case", hint: "While the case is open and in range", fallback: false })
+    if (!pods.isHeadset) picks.push({ key: "barAirpodsCase", room: "airpods", inRoom: "Case in the bar", icon: GLYPHS.airpodsCase, label: "AirPods case", hint: "While the case is open and in range", fallback: false })
   }
   var devices = (state && state.devices) || []
   devices.forEach(function(d) {
@@ -598,6 +577,7 @@ function barItems(state, opts) {
       icon: kindPixel(d.kind),
       text: opts.percent ? (hasLevel(d.level) ? percent(d.level) : (d.status === "asleep" ? "zZ" : "--")) : "",
       powered: !!(d.powered || d.charging),
+      charging: !!d.charging && !d.stale,
       tone: d.status === "no-access" ? "low" : isLow(d, t) && !d.stale ? "low" : (d.stale || !hasLevel(d.level)) ? "dim" : "normal"
     })
   }
@@ -611,6 +591,7 @@ function barItems(state, opts) {
         icon: "airpods",
         text: opts.percent ? percent(pods.level) : "",
         powered: airpodsPowered(pods),
+        charging: airpodsPowered(pods),
         tone: isLow(pods, t) ? "low" : "normal"
       })
     }
@@ -620,6 +601,7 @@ function barItems(state, opts) {
         icon: "airpods-case",
         text: opts.percent ? percent(pods["case"].level) : "",
         powered: !!pods["case"].charging,
+        charging: !!pods["case"].charging,
         tone: "normal"
       })
     }
@@ -635,14 +617,15 @@ function barItems(state, opts) {
         // Full or held at a charge limit still shows, so the charger is
         // visibly connected.
         powered: !!(lap.acOnline || lap.charging),
+        charging: !!lap.charging,
         tone: isLow(lap, t) ? "low" : "normal"
       })
     }
     if (opts.laptopRate && lap.rateW > 0) {
-      items.push({ key: "laptop-rate", icon: lap.charging ? "plug" : "zap", text: watts(lap.rateW), powered: false, tone: "normal" })
+      items.push({ key: "laptop-rate", icon: lap.charging ? "plug" : "zap", text: watts(lap.rateW), powered: false, charging: false, tone: "normal" })
     }
     if (opts.laptopTime && (lap.timeToEmpty || lap.timeToFull)) {
-      items.push({ key: "laptop-time", icon: "clock", text: duration(lap.timeToEmpty || lap.timeToFull), powered: false, tone: "normal" })
+      items.push({ key: "laptop-time", icon: "clock", text: duration(lap.timeToEmpty || lap.timeToFull), powered: false, charging: false, tone: "normal" })
     }
   }
   return items
@@ -813,12 +796,23 @@ var CHARGE_CYCLE_MS = 4000
 var CHARGE_SWEEP_MS = 2000
 // How much of the icon still shows at the middle of the band.
 var CHARGE_BAND_ALPHA = 0.3
-// `flow` runs from 0 (band below the drawing) to 1 (band above it, at rest).
-// `wait` is how many ms until it next changes.
-function chargeStep(now, stepMs) {
-  var t = now % CHARGE_CYCLE_MS
+// The band is three cells of the icon's twelve, so it takes fifteen steps to
+// go from below the drawing to above it: a step a cell. Fewer steps than that
+// stuttered, some moving the band and some not.
+var CHARGE_BAND_CELLS = 3
+var CHARGE_STEPS = 12 + CHARGE_BAND_CELLS
+// Where the band holds still: on a charger but full or held at a limit, or
+// with reduced motion. Over the middle of the drawing.
+var CHARGE_HOLD_FLOW = 7 / CHARGE_STEPS
+
+// `flow` runs from 0 (band below the drawing) to 1 (band above it, at rest),
+// in CHARGE_STEPS steps. `wait` is how many ms until it next changes.
+function chargeStep(now) {
+  var t = ((now % CHARGE_CYCLE_MS) + CHARGE_CYCLE_MS) % CHARGE_CYCLE_MS
   if (t >= CHARGE_SWEEP_MS) return { flow: 1, wait: CHARGE_CYCLE_MS - t }
-  return { flow: Math.floor(t / stepMs) * stepMs / CHARGE_SWEEP_MS, wait: stepMs - t % stepMs }
+  var k = Math.floor(t * CHARGE_STEPS / CHARGE_SWEEP_MS)
+  var next = Math.ceil((k + 1) * CHARGE_SWEEP_MS / CHARGE_STEPS)
+  return { flow: k / CHARGE_STEPS, wait: Math.max(1, next - t) }
 }
 
 // ------------------------------------------------------------- ASCII panel
@@ -944,6 +938,40 @@ function keepTogether(text) {
     .replace(/(\d+h) (\d+m)/g, "$1" + NBSP + "$2")
     .replace(/(\d+(?:\.\d+)?) (W|Wh|%|GHz)\b/g, "$1" + NBSP + "$2")
     .replace(/just now/g, "just" + NBSP + "now")
+}
+
+// ---------------------------------------------------------------- prompt
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+// The prompt line `typed` characters in, as styled text that always lays out
+// the whole line plus a cursor cell, the part not typed yet drawn clear, so a
+// word never wraps differently while it types. The cursor stands in for the
+// next character, except a space, which it would glue to the next word; once
+// typed, it blinks in the cell kept for it at the end. An underscore, the
+// terminal's own cursor: Monocraft has no block characters, and a glyph it
+// lacks comes from a fallback font with taller lines. Sonus's, line for line.
+var CURSOR = "_"
+var CLEAR = "<font color=\"#00000000\">"
+
+function revealLine(line, typed, cursorOn) {
+  line = String(line || "")
+  var n = Math.max(0, Math.min(line.length, Math.floor(typed) || 0))
+  var shown = escapeHtml(line.substring(0, n))
+  var rest
+  if (n < line.length) {
+    var next = line.charAt(n)
+    shown += next === " " || next === NBSP ? next : CURSOR
+    rest = line.substring(n + 1) + CURSOR
+  } else if (cursorOn) {
+    shown += CURSOR
+    rest = ""
+  } else {
+    rest = CURSOR
+  }
+  return rest === "" ? shown : shown + CLEAR + escapeHtml(rest) + "</font>"
 }
 
 // Text arriving the way a terminal decodes it: the first `progress` of it
@@ -1078,15 +1106,6 @@ function pixelText(text) {
   return { width: x, height: 5, rects: rects }
 }
 
-// Monocraft, the panel's text face, is drawn on nine cells to the em. Its
-// letters are sharp only when a cell lands on whole device pixels, so a size
-// moves to the nearest one that does: on a 2x screen 9, 13.5 and 18, where
-// 10 or 12 would smear every stroke across two pixels.
-function crispTextSize(size, dpr) {
-  var step = 9 / (dpr > 0 ? dpr : 1)
-  return Math.max(1, Math.round(size / step)) * step
-}
-
 // ------------------------------------------------------------ room tones
 
 // Each kind's own hue, DailyDash's, for themes whose palette is all greys.
@@ -1134,6 +1153,10 @@ function roomToneHex(name, palette, foreground) {
 // every battery the panel shows, one line each, the AirPods a line a part.
 // { key, name, icon, tone (a KIND_TONES name), level, charging, powered,
 // stale, note }. `note` is a few words for a part that stopped answering.
+// The hover card's last line: what the bar item's other buttons do. A click
+// opens the panel, which the card itself says.
+var HOVER_HINT = "middle: refresh \u00B7 right: settings"
+
 function hoverRows(state, nowSec) {
   var rows = []
   if (!state) return rows
@@ -1147,7 +1170,9 @@ function hoverRows(state, nowSec) {
     airpodsParts(pods).forEach(function(part) {
       var p = part.pod
       if (!p || !hasLevel(p.level)) return
-      var name = part.key === "headset" ? (pods.name || "AirPods") : "AirPods " + part.label.toLowerCase()
+      // The buds and the case by their part alone: the AirPods icon on the
+      // row says whose, and "AirPods case  closed 1h" no longer fit a line.
+      var name = part.key === "headset" ? (pods.name || "AirPods") : part.label
       rows.push({ key: "airpods-" + part.key, name: name, icon: part.key === "case" ? "airpods-case" : "airpods",
                   tone: kindTone("airpods"), level: p.level, charging: !!p.charging && !p.stale, powered: false,
                   stale: !!p.stale || !!pods.stale,

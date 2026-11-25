@@ -3,6 +3,7 @@ import QtQuick.Window
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -39,22 +40,26 @@ BarWidget {
   readonly property bool needsAccess: !!client && client.needsAccess.length > 0
   readonly property color barFg: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
-  readonly property color dim: Qt.darker(barFg, 1.55)
+  // Dim as the bar's text tinted toward the background: darkening vanished
+  // on a light theme, where the text is already dark.
+  readonly property color dim: Qt.tint(barFg, Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.4))
   // Everything on whole device pixels, never scaled. Figures in the pixel
   // type stand as tall as the bar's own digits. Icons take the largest sharp
   // size that is not bigger than the shell's own (its icon size, with pixel
   // art's two units clear around the 24): twelve device pixels on a 1.25
   // scale, twenty-four on a 2.
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  // The window's ratio, not Screen's: at a 1.25 scale Screen says 2.
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   readonly property int pixelUnit: Math.max(1, Math.round(button.fontSize * 0.72 * dpr / 5))
   readonly property int iconUnit: Math.max(1, Math.floor(Style.bar.iconSize * 24 / 20 * dpr / 12))
   // The panel's and the hover card's text is set in Monocraft, shipped in
-  // assets/fonts so it needs no install. The bold is its own file, so bold
-  // text is drawn, not smeared. Until it loads, the shell's font stands in.
+  // assets/fonts so it needs no install, patched (scripts/patch-font.py) to
+  // register as "Monocraft Batteries": under one name, the other plugins'
+  // copies would answer for it. Never bold (MonoText). Until it loads, the
+  // shell's font stands in.
   readonly property string textFont: monocraft.status === FontLoader.Ready ? monocraft.name : Style.font.family
 
   FontLoader { id: monocraft; source: Qt.resolvedUrl("assets/fonts/Monocraft.ttf") }
-  FontLoader { source: Qt.resolvedUrl("assets/fonts/Monocraft-Bold.ttf") }
 
   function toneColor(tone) {
     if (tone === "low") return urgent
@@ -125,7 +130,8 @@ BarWidget {
   implicitHeight: button.implicitHeight
 
   onBarChanged: { electLeader(); injectPanel() }
-  onClientChanged: injectPanel()
+  // A widget that takes over as leader counts a panel already open.
+  onClientChanged: { injectPanel(); syncOpenCount() }
   onOpenedChanged: syncOpenCount()
   Component.onCompleted: electLeader()
   Component.onDestruction: if (countedOpen && client) client.openPanels = Math.max(0, client.openPanels - 1)
@@ -249,8 +255,13 @@ BarWidget {
     fixedWidth: root.vertical ? -1 : content.implicitWidth + scaledHorizontalMargin * 2
     fixedHeight: root.vertical ? Style.bar.iconSlot : -1
 
+    // Left opens the panel, middle reads now, right opens the settings.
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.MiddleButton) root.refresh()
+      else if (buttonCode === Qt.RightButton) {
+        root.broadcast("prepareSettings")
+        root.summon("summon")
+      }
       else root.toggle()
     }
 
@@ -268,11 +279,14 @@ BarWidget {
         color: root.needsAccess ? root.urgent : root.barFg
       }
 
+      // Over the count: every poll builds new items, and a new list would
+      // rebuild every icon in the bar.
       Repeater {
-        model: root.shownItems
+        model: root.shownItems.length
 
         Row {
-          required property var modelData
+          required property int index
+          readonly property var modelData: root.shownItems[index] || ({ icon: "", text: "", tone: "dim" })
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(3)
 
@@ -281,7 +295,8 @@ BarWidget {
             name: modelData.icon
             unit: root.iconUnit
             color: root.toneColor(modelData.tone)
-            powered: modelData.powered
+            powered: modelData.powered === true
+            charging: modelData.charging === true
           }
 
           PixelText {

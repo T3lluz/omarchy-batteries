@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, batteryGlyph, powerGlyph, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState, crispTextSize, keepTogether }")()
+const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState, keepTogether, revealLine, escapeHtml }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -79,13 +79,6 @@ assert.strictEqual(Model.kindPixel(charge.kind), "volume-2")
 const glorious = { id: "m", name: "Mouse", kind: "mouse", source: "glorious" }
 assert.deepStrictEqual(Model.jblSpeakers([glorious, charge]), [charge])
 assert.deepStrictEqual(Model.otherDevices([glorious, charge]), [glorious])
-// The panel's Nerd Font glyphs: the ramps Omarchy's power panel uses.
-assert.strictEqual(Model.batteryGlyph(95, false), "\u{F0079}")
-assert.strictEqual(Model.batteryGlyph(100, false), "\u{F0079}")
-assert.strictEqual(Model.batteryGlyph(40, false), "\u{F007E}")
-assert.strictEqual(Model.batteryGlyph(5, false), "\u{F007A}")
-assert.strictEqual(Model.batteryGlyph(5, true), "\u{F089C}")
-assert.strictEqual(Model.batteryGlyph(null, false), Model.GLYPHS.unknownBattery)
 assert.strictEqual(Model.kindGlyph("speakers"), "\u{F04C3}")
 assert.strictEqual(Model.kindGlyph("toaster"), Model.GLYPHS.battery)
 // A glyph for every kind the bar has an icon for, and one character each.
@@ -94,13 +87,6 @@ for (const k of ["mouse", "keyboard", "headset", "headphones", "speakers", "gami
   assert.strictEqual([...Model.KIND_GLYPHS[k]].length, 1, k)
 }
 for (const name of Object.keys(Model.GLYPHS)) assert.strictEqual([...Model.GLYPHS[name]].length, 1, name)
-// The power mark: a bolt while charge flows, a plug on a charger with none.
-assert.strictEqual(Model.powerGlyph({ charging: true, acOnline: true }), Model.GLYPHS.bolt)
-assert.strictEqual(Model.powerGlyph({ charging: false, acOnline: true }), Model.GLYPHS.plug)
-assert.strictEqual(Model.powerGlyph({ charging: false, powered: true }), Model.GLYPHS.plug)
-assert.strictEqual(Model.powerGlyph({ charging: false }), "")
-assert.strictEqual(Model.powerGlyph(null), "")
-assert.strictEqual(Model.powerGlyph({ charging: true, stale: true }), "")
 
 // Every icon the model and the QML name exists in Pixels.js.
 const pixelSource = fs.readFileSync(path.join(__dirname, "..", "Pixels.js"), "utf8").replace(/^\.pragma library\s*/, "")
@@ -248,6 +234,9 @@ assert.strictEqual(barLaptop(charging).powered, true)
 assert.strictEqual(barLaptop(Object.assign({}, onBattery, { status: "held", acOnline: true })).powered, true)
 assert.strictEqual(barLaptop(Object.assign({}, onBattery, { status: "full", level: 100, acOnline: true })).powered, true)
 assert.strictEqual(barLaptop(onBattery).powered, false)
+// Held at a limit on the charger: powered, but no charge flows, so the band holds still.
+assert.strictEqual(barLaptop(Object.assign({}, onBattery, { status: "held", acOnline: true })).charging, false)
+assert.strictEqual(barLaptop(charging).charging, true)
 const fullOnCable = Object.assign({}, cabled, { level: 100, charging: false, powered: true, status: "full" })
 assert.strictEqual(Model.barItems(Object.assign({}, state, { devices: [fullOnCable] }), opts)[0].powered, true)
 assert.strictEqual(Model.barItems(state, opts)[0].powered, false)
@@ -308,22 +297,24 @@ assert.strictEqual(Model.tooltip({ devices: [] }), "No batteries found")
 
 // The charging band sweeps in steps on the clock, then waits out the rest in one go.
 {
-  assert.deepStrictEqual(Model.chargeStep(0, 80), { flow: 0, wait: 80 })
-  assert.deepStrictEqual(Model.chargeStep(100, 80), { flow: 0.04, wait: 60 })
-  assert.deepStrictEqual(Model.chargeStep(4100, 80), Model.chargeStep(100, 80))
-  assert.deepStrictEqual(Model.chargeStep(2000, 80), { flow: 1, wait: 2000 })
-  assert.deepStrictEqual(Model.chargeStep(3999, 80), { flow: 1, wait: 1 })
-  // Walking the waits lands on every step once and never stalls.
+  assert.deepStrictEqual(Model.chargeStep(0), { flow: 0, wait: 134 })
+  assert.deepStrictEqual(Model.chargeStep(140), { flow: 1 / 15, wait: 127 })
+  assert.deepStrictEqual(Model.chargeStep(4140), Model.chargeStep(140))
+  assert.deepStrictEqual(Model.chargeStep(2000), { flow: 1, wait: 2000 })
+  assert.deepStrictEqual(Model.chargeStep(3999), { flow: 1, wait: 1 })
+  // Walking the waits lands on every step once, each a whole cell of the
+  // band's travel, and never stalls.
   let now = 0, moves = 0, last = -1
   while (now < 4000) {
-    const step = Model.chargeStep(now, 80)
+    const step = Model.chargeStep(now)
     assert.ok(step.wait >= 1)
     assert.ok(step.flow > last)
+    assert.ok(Number.isInteger(Math.round(step.flow * 15 * 1e9) / 1e9), "a whole cell: " + step.flow)
     last = step.flow
     moves++
     now += step.wait
   }
-  assert.strictEqual(moves, 26)
+  assert.strictEqual(moves, 16)
 }
 
 
@@ -568,11 +559,29 @@ assert.strictEqual(Model.markIcon(null, 20), "")
   assert.strictEqual(rows.find(r => r.key === "airpods-case").note, "closed 15m")
   assert.strictEqual(rows.find(r => r.key === "airpods-left").note, "")
   assert.strictEqual(rows[0].tone, "blue")
+  assert.deepStrictEqual(rows.slice(1, 4).map(r => r.name), ["Left", "Right", "Case"])
   // AirPods that are not connected stay out, as in the panel.
   assert.ok(!Model.hoverRows({ airpods: Object.assign({}, oneOut, { connected: false }), devices: [] }).length)
   // A device asleep with no level still gets its line.
   assert.strictEqual(Model.hoverRows({ devices: [asleep] })[0].note, "asleep")
   assert.deepStrictEqual(Model.hoverRows(null), [])
+}
+
+// The prompt lays out the whole line from the first character, the rest
+// drawn clear, so nothing reflows as it types.
+{
+  const clear = s => '<font color="#00000000">' + s + "</font>"
+  assert.strictEqual(Model.revealLine("Abc de", 0, true), "_" + clear("bc de_"))
+  assert.strictEqual(Model.revealLine("Abc de", 3, true), "Abc " + clear("de_"))
+  assert.strictEqual(Model.revealLine("Abc de", 6, true), "Abc de_")
+  assert.strictEqual(Model.revealLine("Abc de", 6, false), "Abc de" + clear("_"))
+  // Every state lays out the same characters.
+  for (let n = 0; n <= 6; n++) {
+    const plain = Model.revealLine("Abc de", n, n % 2 === 0).replace(/<[^>]+>/g, "")
+    assert.strictEqual(plain.length, 7, "state " + n)
+  }
+  assert.strictEqual(Model.revealLine("<a & b>", 7, true), "&lt;a &amp; b&gt;_")
+  assert.strictEqual(Model.revealLine(null, 3, true), "_")
 }
 
 // A reading wraps between its pieces, never inside one.
@@ -586,21 +595,6 @@ assert.strictEqual(Model.markIcon(null, 20), "")
   assert.strictEqual(Model.keepTogether(null), "")
   // Decoding keeps them too.
   assert.strictEqual(Model.scramble("a" + nb + "b", 0, 1).charAt(1), nb)
-}
-
-// Text sizes land Monocraft's cells on whole device pixels.
-{
-  assert.strictEqual(Model.crispTextSize(10, 2), 9)
-  assert.strictEqual(Model.crispTextSize(11, 2), 9)
-  assert.strictEqual(Model.crispTextSize(12, 2), 13.5)
-  assert.strictEqual(Model.crispTextSize(14, 2), 13.5)
-  assert.strictEqual(Model.crispTextSize(16, 2), 18)
-  assert.strictEqual(Model.crispTextSize(12, 1), 9)
-  assert.ok(Math.abs(Model.crispTextSize(10, 1.25) - 7.2) < 1e-9)
-  assert.ok(Math.abs(Model.crispTextSize(12, 1.25) - 14.4) < 1e-9)
-  // Never below one cell a device pixel, and a missing scale counts as 1.
-  assert.strictEqual(Model.crispTextSize(2, 2), 4.5)
-  assert.strictEqual(Model.crispTextSize(12, 0), 9)
 }
 
 console.log("model tests passed")

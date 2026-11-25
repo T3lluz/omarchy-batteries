@@ -4,7 +4,7 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.11.1-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.12.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
@@ -42,7 +42,7 @@ omarchy plugin add https://github.com/T3lluz/omarchy-batteries.git --enable
 Glorious and HyperX devices need read access to their HID node. Click the bar icon and press **Grant access** (it asks for your password once), or run:
 
 ```bash
-sudo ~/.config/omarchy/plugins/io.github.t3lluz.batteries/bin/batteries install-udev
+pkexec ~/.config/omarchy/plugins/io.github.t3lluz.batteries/bin/batteries install-udev
 ```
 
 That installs `udev/70-omarchy-batteries.rules`, which gives the logged-in user (`uaccess`) access to those devices only. AirPods need the librepods daemon that [omapods](https://github.com/thisisgm/omarchy-pods) installs; nothing else is needed for them.
@@ -72,8 +72,12 @@ The Glorious reader speaks the protocol from [korkje/mow](https://github.com/kor
 |---|---|
 | Click | Open the panel |
 | Middle click | Refresh now |
+| Right click | Open the settings |
 | `r` in the panel | Refresh |
-| `c` or `,` in the panel | Settings: what the bar shows, low battery |
+| `j` `k` or the arrows in the panel | Move between batteries |
+| Enter in the panel | Open or close the battery under the cursor |
+| `,` (or `c`) in the panel | Settings: what the bar shows, low battery |
+| Esc in the panel | Back a step: close a battery, leave the settings, close the panel |
 
 ## Settings
 
@@ -113,6 +117,22 @@ Laptop (BAT0)                      laptop      89%  discharging, 51.9 W, 1h 00m 
 AirPods Pro                        airpods     70%  L 80% R 70% case 50%⚡, connected
 Glorious Model O Wireless          mouse       83% ⚡  charging, usb via glorious
 ```
+
+## Remove
+
+Take the widget out of the bar in Omarchy's settings, then remove the plugin's folder:
+
+```bash
+rm -rf ~/.config/omarchy/plugins/io.github.t3lluz.batteries
+```
+
+If you granted HID access, take the udev rule away too (before removing the folder, since the command is in it):
+
+```bash
+pkexec ~/.config/omarchy/plugins/io.github.t3lluz.batteries/bin/batteries uninstall-udev
+```
+
+The saved AirPods levels and charge history are in `~/.local/state/omarchy-batteries/`; delete that folder to drop them.
 
 ## Development
 

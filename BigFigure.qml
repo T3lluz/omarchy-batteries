@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 
 // A room's level in the block face (Model.bigDigits), with a small % and
@@ -14,6 +15,9 @@ Item {
   id: figure
 
   property var value: null
+  // The level the value is counting up to. The figure keeps room for its
+  // digits from the start, so it does not widen as it counts.
+  property var target: value
   property color tone: "white"
   property color foreground: "white"
   property string mark: ""
@@ -29,9 +33,16 @@ Item {
   readonly property bool known: Model.hasLevel(value)
   readonly property var rows: Model.bigDigits(known ? String(Math.round(value)) : "--")
   readonly property int cols: rows[0].length
+  readonly property int targetCols: Model.bigDigits(Model.hasLevel(target) ? String(Math.round(target)) : "--")[0].length
+  readonly property int slotCols: Math.max(cols, targetCols)
+  // Right-aligned in that room.
+  readonly property real digitsLeft: Math.round((slotCols - cols) * cellW)
+  // Dim as the text tinted toward the background, so it reads on a light
+  // theme too.
+  readonly property color dim: Qt.tint(foreground, Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.4))
   readonly property real cellW: grid.implicitWidth / 10
   readonly property real cellH: Math.round(metrics.height * 0.9)
-  readonly property real digitsWidth: Math.round(cols * cellW)
+  readonly property real digitsWidth: Math.round(slotCols * cellW)
   // Every block of every row, as [col, row, "full" | "top" | "bottom"].
   readonly property var blocks: {
     var out = []
@@ -71,11 +82,11 @@ Item {
     Rectangle {
       required property var modelData
       readonly property real from: modelData[1] * figure.cellH + (modelData[2] === "bottom" ? figure.cellH / 2 : 0)
-      x: Math.round(modelData[0] * figure.cellW)
+      x: figure.digitsLeft + Math.round(modelData[0] * figure.cellW)
       y: Math.round(from)
-      width: Math.round((modelData[0] + 1) * figure.cellW) - x
+      width: figure.digitsLeft + Math.round((modelData[0] + 1) * figure.cellW) - x
       height: Math.round(from + (modelData[2] === "full" ? figure.cellH : figure.cellH / 2)) - y
-      color: figure.known ? figure.tone : Qt.darker(figure.foreground, 1.5)
+      color: figure.known ? figure.tone : figure.dim
     }
   }
 
@@ -84,13 +95,15 @@ Item {
     x: figure.digitsWidth + Style.space(3)
     height: figure.implicitHeight
 
+    // The mark's slot is there with or without a mark, so nothing beside the
+    // figure shifts when charging starts.
     Item {
       width: Math.max(pct.implicitWidth, figure.markSize)
       height: figure.implicitHeight - pct.implicitHeight
-      visible: figure.mark !== ""
 
       PixelIcon {
         anchors.centerIn: parent
+        visible: figure.mark !== ""
         name: figure.mark
         size: figure.markSize
         color: figure.tone
@@ -101,14 +114,12 @@ Item {
       }
     }
 
-    Item { width: 1; height: figure.mark !== "" ? 0 : figure.implicitHeight - pct.implicitHeight }
-
     PixelText {
       id: pct
       visible: figure.known
       text: "%"
       size: Style.font.caption * 0.75
-      color: Qt.darker(figure.foreground, 1.5)
+      color: figure.dim
     }
   }
 }
