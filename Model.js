@@ -183,7 +183,14 @@ function airpodsWithLastKnown(pods, previous, nowSec) {
   if (!pods) return null
   var now = nowSec || Date.now() / 1000
   var out = copy(pods)
-  var same = !!previous && previous.name === pods.name
+  // With the case shut, librepods hears nothing and forgets the name too, so
+  // a reading that knows nothing is the AirPods last seen, whatever it calls
+  // them. Other AirPods that answer do not inherit these levels.
+  var same = !!previous && (previous.name === pods.name || !pods.known)
+  if (same && !pods.known) {
+    out.name = previous.name
+    out.model = previous.model || out.model
+  }
   var fresh = 0, kept = 0
   // The buds hear the case only while one of them sits in it. With every bud
   // in an ear, what they report for the case is what it said when they left
@@ -204,6 +211,8 @@ function airpodsWithLastKnown(pods, previous, nowSec) {
       fresh++
     } else if (same && previous[k] && hasLevel(previous[k].level)) {
       out[k] = copy(previous[k])
+      // Where it was when it went quiet: in an ear, or out (in the case).
+      if (!previous[k].stale) out[k].lastInEar = previous[k].inEar === true
       out[k].stale = true
       out[k].charging = false
       out[k].inEar = false
@@ -220,6 +229,22 @@ function airpodsWithLastKnown(pods, previous, nowSec) {
   }
   out.known = fresh + kept > 0
   return out
+}
+
+// Put away: the AirPods went quiet in their case, lid shut. Nothing can be
+// read through a shut lid (the buds and the case stop answering and stop
+// broadcasting), so this is the last thing they said: every bud out of an
+// ear, and the case heard as late as each of them. Worn buds hear the case
+// only from when they left it, so AirPods that walked off in someone's ears
+// fail the second test.
+function airpodsPutAway(pods) {
+  if (!pods || !pods.known || !pods.stale || pods.isHeadset) return false
+  var pack = pods["case"]
+  var buds = [pods.left, pods.right].filter(function(b) { return b && hasLevel(b.level) })
+  if (!pack || !hasLevel(pack.level) || !buds.length) return false
+  return buds.every(function(b) {
+    return b.lastInEar === false && (pack.seenAt || 0) >= (b.seenAt || 0) - 5
+  })
 }
 
 function caseOutOfReach(pods) {
@@ -357,12 +382,16 @@ function airpodsParts(pods) {
 
 // The panel shows AirPods only while they are connected, the way a mouse
 // that is switched off drops out of the device list.
+// AirPods leave the panel when they disconnect, like any other device, but
+// not when they were put away in their case: there their last levels are
+// what there is to know.
 function airpodsShown(pods) {
-  return !!pods && pods.connected === true
+  return !!pods && (pods.connected === true || airpodsPutAway(pods))
 }
 
 function airpodsStatus(pods) {
   if (!pods) return ""
+  if (pods.stale && !pods.connected && airpodsPutAway(pods)) return "In the case · last levels"
   if (pods.stale) return (pods.connected ? "Connected" : "Not connected") + " · last levels"
   if (pods.connected) {
     if (!pods.known) return "Connected · waiting for levels"
@@ -683,19 +712,60 @@ function alertNote(device) {
   }
 }
 
-// What became of an alert since it went up: "low" still, "charging" once it
-// is plugged in, "fine" back above the threshold, "gone" when it stopped
-// answering.
-function alertState(key, state, threshold) {
-  var list = alertables(state || {})
+// Points a battery must climb over its alert's level to count as plugged in.
+// Not every battery says it charges: AirPods charging in their case report
+// "not charging" while the buds climb, so the level is the proof.
+var ALERT_RISE = 3
+// How long an alert's battery may be out of reach or without a level before
+// its notification is taken down. A mouse going over to its cable drops out
+// for a poll or two while it enumerates.
+var ALERT_GRACE_S = 120
+
+// The battery an alert is about, as the alert sees it.
+function alertTarget(key, state) {
+  key = String(key)
+  if (key === "airpods") {
+    var pods = state && state.airpods
+    if (!pods || !pods.known) return null
+    var buds = [pods.left, pods.right, pods.headset].filter(function(p) { return p && !p.stale && hasLevel(p.level) })
+    var shown = buds.length ? buds.reduce(function(a, b) { return b.level < a.level ? b : a }) : null
+    var pack = pods["case"]
+    // The emptier bud out of an ear while the case answers: it sits in the
+    // case, which charges it whether or not the case is on a cable.
+    var inCase = !pods.stale && !pods.isHeadset && !!shown && shown.inEar === false && !!pack && !pack.stale && hasLevel(pack.level)
+    return {
+      level: pods.level,
+      stale: !!pods.stale,
+      charging: !pods.stale && !!(pods.charging || (shown && shown.charging)) || inCase || airpodsPutAway(pods)
+    }
+  }
+  var list = (state && state.devices) || []
   for (var i = 0; i < list.length; i++) {
     var d = list[i]
-    if (String(d.id) !== String(key)) continue
-    if (d.stale) return { state: "gone", level: d.level }
-    if (d.charging) return { state: "charging", level: d.level }
-    return { state: isLow(d, threshold) ? "low" : "fine", level: d.level }
+    if (String(d.id) !== key) continue
+    return { level: d.level, stale: !!d.stale, charging: !d.stale && !!(d.charging || d.powered) }
   }
-  return { state: "gone", level: null }
+  return null
+}
+
+// What to do with a low-battery notification after a poll. `watch` is what
+// its notice keeps: { key, level (when it went up), unknownSince }. Returns
+// { action, level, watch }: "thank" once it is plugged in (charging, on a
+// charger, put away in its case, or climbing), "withdraw" once it is back
+// over the line by itself or has been out of reach for a while, else "wait".
+function alertStep(watch, state, threshold, nowSec) {
+  var next = copy(watch)
+  var t = alertTarget(watch.key, state)
+  if (t && t.charging) return { action: "thank", level: t.level, watch: next }
+  var reading = !!t && !t.stale && hasLevel(t.level)
+  if (!reading) {
+    if (!next.unknownSince) next.unknownSince = nowSec
+    return { action: nowSec - next.unknownSince >= ALERT_GRACE_S ? "withdraw" : "wait", level: null, watch: next }
+  }
+  next.unknownSince = 0
+  if (hasLevel(watch.level) && t.level >= watch.level + ALERT_RISE) return { action: "thank", level: t.level, watch: next }
+  if (t.level > threshold) return { action: "withdraw", level: t.level, watch: next }
+  return { action: "wait", level: t.level, watch: next }
 }
 
 function tooltip(state) {

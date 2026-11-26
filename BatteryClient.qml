@@ -119,12 +119,12 @@ Item {
   // ------------------------------------------------------------- alerts
 
   // A battery that goes low gets a real notification, so it takes its place
-  // in the shell's stack and history and keeps to Do Not Disturb, dressed in
-  // the panel's look: its picture is a pixel badge (`bin/batteries badge`)
-  // drawn for the focused screen's scale, and a click opens the panel. The
-  // notification follows the battery: plugged in, the same card turns to
-  // its thanks in the room's colour and goes; back above the line or out of
-  // reach, it is withdrawn.
+  // in the shell's stack and keeps to Do Not Disturb, dressed in the panel's
+  // look: its picture is a pixel badge (`bin/batteries badge`) drawn for the
+  // focused screen's scale, and a click opens the panel. The notification
+  // follows the battery (`Model.alertStep`): plugged in, the same card turns
+  // to its thanks in the room's colour and goes; back over the line by
+  // itself, or out of reach for a while, it is taken down.
 
   // The bar widget that knows the room colours (its alertTone).
   property var toneHost: null
@@ -140,12 +140,14 @@ Item {
   }
 
   function followAlerts() {
+    var now = Date.now() / 1000
     for (var id in notices) {
       var n = notices[id]
       if (!n || n.preview || n.answered) continue
-      var now = Model.alertState(id, root.state, lowThreshold)
-      if (now.state === "charging") n.thank(now.level)
-      else if (now.state !== "low") n.withdraw()
+      var step = Model.alertStep(n.watch, root.state, lowThreshold, now)
+      n.watch = step.watch
+      if (step.action === "thank") n.thank(step.level)
+      else if (step.action === "withdraw") n.withdraw()
     }
   }
 
@@ -192,14 +194,23 @@ Item {
       property string nid: ""
       property bool answered: false
       property bool thanked: false
+      // What Model.alertStep keeps between polls.
+      property var watch: ({ key: note.key, level: note.level, unknownSince: 0 })
 
       readonly property string base: root.historyDir + "/alerts/" + String(note.key).replace(/[^A-Za-z0-9_-]/g, "_")
       readonly property string openArgv: JSON.stringify(["omarchy-shell", "io.github.t3lluz.batteries", "open"])
 
       // Draws the badge, then sends it; --wait keeps this running until the
       // notification closes, which is how the notice knows it is gone.
+      // Transient, so the shell does not bring it back after a restart with
+      // no one left to follow it; this side sends it again if it still holds.
       readonly property string sendScript: 'python3 -B "$1" badge "$2" "$3" "$4" "$5" "$6"; img="$2"; [ -s "$img" ] || img=battery-caution; '
-        + 'exec notify-send -p --wait -a Batteries -u critical -i "$img" -h "string:omarchy-exec-argv:$7" -- "$8" "$9"'
+        + 'exec notify-send -p --wait -a Batteries -u critical -h boolean:transient:true -i "$img" -h "string:omarchy-exec-argv:$7" -- "$8" "$9"'
+      // The shell keeps a card on screen when its sender closes it, so it is
+      // also dismissed through the shell, by its title.
+      readonly property string closeScript: 'omarchy-shell notifications dismiss "$2" >/dev/null 2>&1; '
+        + 'gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications '
+        + '--method org.freedesktop.Notifications.CloseNotification "$1" >/dev/null 2>&1; true'
       readonly property string thankScript: 'python3 -B "$1" badge "$2" "$3" "$4" "$5" "$6"; img="$2"; [ -s "$img" ] || img=battery-good-charging; '
         + 'exec notify-send -r "${10}" -a Batteries -u normal -t 5000 -h boolean:transient:true -i "$img" -h "string:omarchy-exec-argv:$7" -- "$8" "$9"'
 
@@ -214,13 +225,18 @@ Item {
       }
 
       function withdraw() {
-        if (answered) return
+        if (answered || !nid) return
         answered = true
-        if (!nid) return
-        closer.command = ["gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
-                          "--object-path", "/org/freedesktop/Notifications",
-                          "--method", "org.freedesktop.Notifications.CloseNotification", nid]
+        closer.command = ["sh", "-c", closeScript, "batteries-alert", nid, note.title]
         closer.running = true
+      }
+
+      // Taken down with the plugin (a reload): the card would stay with no
+      // one to answer it, so it goes, and the new client sends it again if
+      // the battery is still low.
+      Component.onDestruction: {
+        if (answered || !nid || preview) return
+        Quickshell.execDetached(["sh", "-c", closeScript, "batteries-alert", nid, note.title])
       }
 
       Process {
@@ -284,7 +300,13 @@ Item {
     }
   }
 
-  Component.onCompleted: Qt.callLater(pollNow)
+  Component.onCompleted: {
+    // A reload took the last client's notifications down with it (each
+    // notice dismisses its card as it goes), so what is still low is told
+    // again.
+    persisted.notified = ({})
+    Qt.callLater(pollNow)
+  }
 
   Timer {
     running: true

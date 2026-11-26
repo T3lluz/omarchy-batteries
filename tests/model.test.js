@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertState, keepTogether, revealLine, escapeHtml }")()
+const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertStep, airpodsPutAway, keepTogether, revealLine, escapeHtml }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -194,6 +194,16 @@ assert.strictEqual(Model.airpodsShown(podsFresh), true)
 assert.strictEqual(Model.airpodsShown(podsGone), false)
 assert.strictEqual(Model.airpodsShown(podsKept), false)
 assert.strictEqual(Model.airpodsShown(null), false)
+// Put away in the case they stay, at their last levels.
+{
+  const t0 = 1795000000
+  const out = Object.assign({}, podsFresh, { left: { level: 80, charging: false, inEar: false }, right: { level: 70, charging: false, inEar: false } })
+  const shutLid = Model.airpodsWithLastKnown(Object.assign({}, podsGone, { name: "AirPods" }), Model.airpodsWithLastKnown(out, null, t0), t0 + 60)
+  assert.strictEqual(Model.airpodsShown(shutLid), true)
+  assert.strictEqual(Model.airpodsStatus(shutLid), "In the case · last levels")
+  assert.strictEqual(Model.podPartState("left", shutLid.left, t0 + 60), "in case · 1m ago")
+  assert.strictEqual(Model.podPartState("case", shutLid["case"], t0 + 600), "closed · 10m ago")
+}
 
 // The bar picker: laptop, AirPods, then each peripheral.
 {
@@ -612,10 +622,54 @@ console.log("model tests passed")
   assert.strictEqual(note.tone, Model.kindTone("mouse"))
   assert.strictEqual(Model.alertNote({ id: "airpods", name: "AirPods Pro", kind: "airpods", level: 9 }).title, "AirPods battery low")
   const at = devices => ({ laptop: null, airpods: null, devices })
-  assert.strictEqual(Model.alertState("hid-1", at([mouse]), 20).state, "low")
-  assert.strictEqual(Model.alertState("hid-1", at([Object.assign({}, mouse, { charging: true, level: 13 })]), 20).state, "charging")
-  assert.strictEqual(Model.alertState("hid-1", at([Object.assign({}, mouse, { level: 40 })]), 20).state, "fine")
-  assert.strictEqual(Model.alertState("hid-1", at([Object.assign({}, mouse, { stale: true })]), 20).state, "gone")
-  assert.strictEqual(Model.alertState("hid-1", at([]), 20).state, "gone")
+  const watch = { key: "hid-1", level: 12, unknownSince: 0 }
+  const step = (devices, w, now) => Model.alertStep(w || watch, at(devices), 20, now || 1000)
+  const as = (o) => Object.assign({}, mouse, o)
+  assert.strictEqual(step([mouse]).action, "wait")
+  // Plugged in: charging, or on a cable at a level it does not call charging.
+  assert.deepStrictEqual([step([as({ charging: true, level: 13 })]).action, step([as({ charging: true, level: 13 })]).level], ["thank", 13])
+  assert.strictEqual(step([as({ powered: true })]).action, "thank")
+  // A battery that never says it charges but climbs is plugged in too.
+  assert.strictEqual(step([as({ level: 15 })]).action, "thank")
+  assert.strictEqual(step([as({ level: 40 })]).action, "thank")
+  assert.strictEqual(step([as({ level: 14 })]).action, "wait")
+  // A reading that bounces over the line by itself takes the card down.
+  assert.strictEqual(Model.alertStep(Object.assign({}, watch, { level: 20 }), at([as({ level: 21 })]), 20, 1000).action, "withdraw")
+  // Out of reach or without a level: wait, then take it down after a while.
+  const gone = step([as({ stale: true })], watch, 1000)
+  assert.strictEqual(gone.action, "wait")
+  assert.strictEqual(gone.watch.unknownSince, 1000)
+  assert.strictEqual(step([], gone.watch, 1060).action, "wait")
+  assert.strictEqual(step([], gone.watch, 1120).action, "withdraw")
+  assert.strictEqual(step([as({ level: null })], watch, 1000).action, "wait")
+  // Back with a reading, the clock starts over; back on its cable, thanks.
+  assert.strictEqual(step([mouse], gone.watch, 1100).watch.unknownSince, 0)
+  assert.strictEqual(step([as({ charging: true })], gone.watch, 1110).action, "thank")
+
+  // AirPods charge in their case without saying so.
+  const t0 = 1795000000
+  const worn = Model.airpodsWithLastKnown({ name: "AirPods Pro", model: "AirPods Pro 2 (USB-C)", connected: true, isHeadset: false,
+    left: { level: 10, charging: false, inEar: true }, right: { level: 12, charging: false, inEar: true }, case: null, headset: null,
+    level: 10, charging: false, known: true }, null, t0)
+  const podsWatch = { key: "airpods", level: 10, unknownSince: 0 }
+  const podsStep = (pods, now) => Model.alertStep(podsWatch, { airpods: pods, devices: [] }, 15, now || t0)
+  assert.strictEqual(podsStep(worn).action, "wait")
+  const inCase = Model.airpodsWithLastKnown(Object.assign({}, worn, {
+    left: { level: 10, charging: false, inEar: false }, right: { level: 12, charging: false, inEar: false }, case: { level: 96, charging: false } }), worn, t0 + 30)
+  assert.strictEqual(podsStep(inCase).action, "thank")
+  // Lid shut: librepods forgets them, name and all, and they are put away.
+  const shut = { name: "AirPods", model: "", connected: false, isHeadset: false, left: null, right: null, case: null, headset: null, level: null, charging: false, known: false }
+  const away = Model.airpodsWithLastKnown(shut, inCase, t0 + 60)
+  assert.strictEqual(away.name, "AirPods Pro")
+  assert.strictEqual(away.model, "AirPods Pro 2 (USB-C)")
+  assert.strictEqual(away.stale, true)
+  assert.strictEqual(away.left.level, 10)
+  assert.strictEqual(Model.airpodsPutAway(away), true)
+  assert.strictEqual(podsStep(away).action, "thank")
+  // Walked off in someone's ears: not put away, so the card waits.
+  const walked = Model.airpodsWithLastKnown(shut, worn, t0 + 60)
+  assert.strictEqual(walked.known, true)
+  assert.strictEqual(Model.airpodsPutAway(walked), false)
+  assert.strictEqual(podsStep(walked, t0 + 60).action, "wait")
 }
 console.log("alert tests passed")
