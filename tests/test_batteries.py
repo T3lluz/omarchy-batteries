@@ -347,6 +347,12 @@ class AirPodsTest(unittest.TestCase):
         p = pb.parse_librepods(self.status(is_headset=True, headset={"available": True, "level": 55, "charging": True}))
         self.assertEqual((p["level"], p["charging"], p["isHeadset"]), (55, True, True))
 
+    def test_lid(self):
+        self.assertTrue(pb.parse_librepods(self.status(lid_state=0))["lidOpen"])
+        for lid in (1, 2, None, False):
+            self.assertFalse(pb.parse_librepods(self.status(lid_state=lid))["lidOpen"])
+        self.assertFalse(pb.parse_librepods(self.status())["lidOpen"])
+
     def test_not_librepods(self):
         self.assertIsNone(pb.parse_librepods("{}"))
         self.assertIsNone(pb.parse_librepods(""))

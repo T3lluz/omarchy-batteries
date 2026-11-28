@@ -34,6 +34,13 @@ Item {
   property bool pollAgain: false
 
   readonly property var state: ({ laptop: laptop, airpods: airpods, devices: devices })
+
+  // AirPods that connect, or whose case lid opens (Model.airpodsArrival):
+  // the bar widget drops its card in at the top of the screen. The last
+  // reading is not persisted, so a reload starts quiet.
+  signal airpodsArrived(string reason)
+  property var lastPodsReading: null
+  property real lastArrivalSec: 0
   readonly property string scriptPath: decodeURIComponent(Qt.resolvedUrl("bin/batteries").toString().replace(/^file:\/\//, ""))
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state"
   readonly property string podsStatePath: stateHome + "/librepods/status.json"
@@ -90,6 +97,13 @@ Item {
     var pods = Model.airpodsWithLastKnown(parsed.airpods, persisted.lastAirpods, Date.now() / 1000)
     devices = next
     airpods = pods
+    var nowSec = Date.now() / 1000
+    var arrival = Model.airpodsArrival(lastPodsReading, parsed.airpods, nowSec, lastArrivalSec)
+    lastPodsReading = parsed.airpods
+    if (arrival) {
+      lastArrivalSec = nowSec
+      airpodsArrived(arrival)
+    }
     laptop = parsed.laptop
     if (laptop && historyLoaded) {
       var grown = Model.pushLevelSample(history, Date.now() / 1000, laptop.level, laptop.charging || laptop.acOnline)

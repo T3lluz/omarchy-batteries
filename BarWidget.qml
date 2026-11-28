@@ -27,6 +27,7 @@ BarWidget {
   })
   readonly property int lowThreshold: Number(setting("lowThreshold", 20)) || 20
   readonly property bool notifyLow: setting("notifyLow", true) === true
+  readonly property bool airpodsCard: setting("airpodsCard", true) === true
   readonly property int intervalSec: Number(setting("refreshIntervalSec", 30)) || 30
 
   property var leader: root
@@ -172,6 +173,43 @@ BarWidget {
     return low ? panel.lowTone : panel.toneOf(name)
   }
 
+  // The card that drops in at the top of the screen when AirPods connect or
+  // their case opens: one for the shell, so the leader's. Not while the
+  // panel is open, which already shows them.
+  Loader {
+    id: airpodsCardLoader
+    active: root.isLeader
+    sourceComponent: Component {
+      AirpodsCard {
+        client: root.client
+        bar: root.bar
+        fontFamily: root.textFont
+        shellFamily: root.bar ? root.bar.fontFamily : Style.font.family
+        lowThreshold: root.lowThreshold
+        onOpenPanel: root.summon("summon")
+      }
+    }
+  }
+
+  Connections {
+    target: root.isLeader ? root.client : null
+    function onAirpodsArrived(reason) {
+      if (!root.airpodsCard || !airpodsCardLoader.item) return
+      if (root.client && root.client.openPanels > 0) return
+      airpodsCardLoader.item.arrive(reason, null)
+    }
+  }
+
+  // The card on the AirPods there are, or made-up ones when none are
+  // connected (`previewAirpods`).
+  function previewAirpodsCard() {
+    var card = airpodsCardLoader.item
+    if (!card) return "not the leader"
+    var pods = root.client ? root.client.airpods : null
+    card.arrive("connected", pods && pods.connected && Model.airpodsCardReady(pods) ? null : Model.airpodsPreview(Date.now() / 1000))
+    return "ok"
+  }
+
   Loader {
     id: panelLoader
     active: true
@@ -204,6 +242,11 @@ BarWidget {
       if (!root.client) return "loading"
       root.client.previewAlert()
       return "ok"
+    }
+    // The AirPods card, as it drops in when they connect.
+    function previewAirpods(): string {
+      // The leader owns the card; this handler may be another monitor's.
+      return root.leader && typeof root.leader.previewAirpodsCard === "function" ? root.leader.previewAirpodsCard() : "loading"
     }
     function status(): string {
       var c = root.client

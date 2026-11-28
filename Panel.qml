@@ -1332,6 +1332,31 @@ Panel {
 
             PanelSeparator { foreground: root.foreground }
 
+            Column {
+              width: parent.width
+              spacing: Style.space(10)
+
+              SectionHeader {
+                icon: Model.GLYPHS.earbuds
+                title: "AIRPODS"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              SwitchRow {
+                icon: Model.GLYPHS.airpodsCase
+                label: "Card when they connect"
+                hint: "At the top of the screen, also when the case opens"
+                checked: root.setting("airpodsCard", true) === true
+                foreground: root.foreground
+                accent: root.accent
+                fontFamily: root.fontFamily
+                onToggled: root.setOption("airpodsCard", !checked)
+              }
+            }
+
+            PanelSeparator { foreground: root.foreground }
+
             UpdateSection {
               icon: Model.GLYPHS.update
               autoCheckIcon: Model.GLYPHS.clock

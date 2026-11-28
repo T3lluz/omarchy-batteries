@@ -116,6 +116,9 @@ var ACTS = {
   // One bud alone, for its own cell.
   "airpods-left": [[100, { budL: [0, -1] }], [80, {}], [100, { budL: [0, -1] }]],
   "airpods-right": [[100, { budR: [0, -1] }], [80, {}], [100, { budR: [0, -1] }]],
+  // A bud on its own (the AirPods card's rooms) lifts as it does in the pair.
+  "airpod-left": [[100, { bud: [0, -1] }], [80, {}], [100, { bud: [0, -1] }]],
+  "airpod-right": [[100, { bud: [0, -1] }], [80, {}], [100, { bud: [0, -1] }]],
   // The lid lifts and shuts, and the light blinks.
   "airpods-case": [[240, { lid: [0, -1] }], [90, {}], [110, { light: 0 }], [110, {}], [110, { light: 0 }]]
 }

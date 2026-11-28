@@ -69,6 +69,23 @@ CUSTOM = {
         "............",
         "............",
     ],
+    # One bud alone, the pair's left one drawn a size up with its speaker
+    # grille, so beside a figure it reads as a bud and not a 9. For a room of
+    # its own (the AirPods card). The right is its mirror.
+    "airpod-left": [
+        "............",
+        "...#####....",
+        "..#.....#...",
+        "..#.##..#...",
+        "..#.....#...",
+        "...####.#...",
+        "......#.#...",
+        "......#.#...",
+        "......#.#...",
+        "......#.#...",
+        "......###...",
+        "............",
+    ],
     # The case: a rounded box, the lid's seam across it, the light under it.
     "airpods-case": [
         "............",
@@ -85,6 +102,7 @@ CUSTOM = {
         "............",
     ],
 }
+CUSTOM["airpod-right"] = [row[::-1] for row in CUSTOM["airpod-left"]]
 
 
 # The parts of an icon that move on their own (Motion.js acts them out), as
@@ -124,6 +142,8 @@ PARTS = {
     "check": [("short", [(2, 6, 4, 8)]), ("long", [(5, 3, 9, 7)])],
     "airpods": [("budL", [(0, 0, 5, 11)]), ("budR", [(6, 0, 11, 11)])],
     "airpods-case": [("lid", [(0, 0, 11, 4)]), ("light", [(5, 7, 6, 7)])],
+    "airpod-left": [("bud", "*")],
+    "airpod-right": [("bud", "*")],
 }
 
 # Pixels an icon shows only while it acts: 12-cell drawings, or rectangles

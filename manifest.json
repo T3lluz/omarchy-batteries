@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.t3lluz.batteries",
   "name": "Batteries",
-  "version": "2.13.0",
+  "version": "2.14.0",
   "author": "fredde",
   "license": "MIT",
   "homepage": "https://github.com/T3lluz/omarchy-batteries",
@@ -29,6 +29,7 @@
       "barPercent": true,
       "lowThreshold": 20,
       "notifyLow": true,
+      "airpodsCard": true,
       "refreshIntervalSec": 30,
       "autoUpdateCheck": true
     },
@@ -83,6 +84,13 @@
         "key": "notifyLow",
         "type": "boolean",
         "label": "Notify when a device or AirPods run low",
+        "defaultValue": true
+      },
+      {
+        "key": "airpodsCard",
+        "type": "boolean",
+        "label": "Show a card when AirPods connect or their case opens",
+        "description": "Drops in at the top of the screen with each bud and the case. Click it for the panel.",
         "defaultValue": true
       },
       {

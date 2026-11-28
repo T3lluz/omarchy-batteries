@@ -4,7 +4,7 @@
   <p>Every battery in the Omarchy bar: the <b>laptop</b> with its draw, time left and health,<br/>
   <b>AirPods</b> bud by bud, and your <b>mouse, keyboard, headset, controller and phone</b>. Pick what the bar shows.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v2.13.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v2.14.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-9be86b" />
     <img alt="Bar widget" src="https://img.shields.io/badge/bar%20widget-Quickshell-9be86b" />
     <a href="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-batteries/actions/workflows/ci.yml/badge.svg" /></a>
@@ -24,6 +24,7 @@
 - **Laptop:** its level and what it is doing, the charge limit as a tick across its battery, then the power in or out, health against the design capacity, the limit, cycles and energy in Wh. A bolt means charge is flowing in, a plug means it is on a charger with nothing flowing. Same for everything else in the panel.
 - **Drain:** your average drain on battery over the last 12 hours, listed with the laptop. Time spent plugged in, even held at a charge limit, never counts. The charge history behind it is kept for a day in `~/.local/state/omarchy-batteries/` and survives restarts.
 - **AirPods:** left, right and case side by side, each with its level in the same block digits, a small battery and what it is doing (in ear, out, charging), or an AirPods Max's single battery. A closed case takes the buds in it off the air, so with one bud in your ear and the other in the case, the case and that bud keep their last levels, dimmed and marked "in case · 14m ago". Those levels are kept on disk and survive a restart. Put both away and shut the lid and they stay in the panel at their last levels, marked "In the case": nothing can be read through a shut lid, since the buds and the case stop answering and stop broadcasting. Like any other device, AirPods that disconnect anywhere else leave the panel.
+- **AirPods card:** connect your AirPods, or open their case near the laptop, and a card slides out from under the bar at the top of the screen: the name, what they are doing, and a room each for the left bud, the right bud and the case, with a big pixel icon, the level in block digits and a battery. It goes after six seconds, or stays while the pointer is on it. Click it for the panel, right-click to send it away. It shows once per arrival, never when the shell starts with AirPods already connected, and not while the panel is open. Turn it off in the settings.
 - **JBL speakers:** first among the devices under the JBL mark, each titled with its model (Charge 5, Boombox 3, ...), the name you gave it in the JBL app underneath, with level and charging, read the way the JBL Portable app reads them.
 - **Devices:** one room per peripheral (mouse, keyboard, speaker, headphones, controller, phone, tablet and more), with its level, its battery, its state and how it is connected (USB cable, 2.4 GHz or Bluetooth).
 - **At a glance:** the prompt line under the panel's title types out what is worth knowing, like how long the laptop has left and which battery is lowest, and takes turns between them. Anything low holds that line still.
@@ -94,6 +95,7 @@ Pick them from the gear in the panel. They are saved in the widget's entry in `~
 | `barPercent` | `true` | Percentages next to the icons |
 | `lowThreshold` | `20` | Low battery level, in percent |
 | `notifyLow` | `true` | Notify when a peripheral or AirPods cross it |
+| `airpodsCard` | `true` | Card at the top of the screen when AirPods connect or their case opens |
 | `refreshIntervalSec` | `30` | Poll interval; 10 s with rate or time in the bar, 5 s while the panel is open |
 
 ## Commands
@@ -102,6 +104,7 @@ Pick them from the gear in the panel. They are saved in the widget's entry in `~
 omarchy-shell io.github.t3lluz.batteries toggle     # open on the focused monitor; open | close
 omarchy-shell io.github.t3lluz.batteries settings   # open on the settings view
 omarchy-shell io.github.t3lluz.batteries refresh
+omarchy-shell io.github.t3lluz.batteries previewAirpods   # the AirPods card, on made-up levels if none are connected
 omarchy-shell io.github.t3lluz.batteries status     # JSON: what the bar shows, every battery
 ```
 

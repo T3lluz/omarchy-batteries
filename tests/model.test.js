@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertStep, airpodsPutAway, keepTogether, revealLine, escapeHtml }")()
+const Model = new Function(source + "\nreturn { kindGlyph, deviceTitle, jblSpeakers, otherDevices, kindLabel, GLYPHS, KIND_GLYPHS, parseProbe, withLastKnown, airpodsWithLastKnown, percent, duration, watts, isLow, statusText, subtitle, laptopStatus, laptopFacts, laptopEnergy, shortName, heroPhrases, heroBattery, laptopPhrase, airpodsParts, barPicks, barPickedText, airpodsShown, airpodsStatus, contrast, inBar, toggleBarDevice, idList, barItems, parseHistory, serializeHistory, pushLevelSample, historySince, drainPerHour, drainRate, lowBatteryAlerts, alertables, tooltip, chargeStep, airpodsPowered, CHARGE_BAND_ALPHA, podPartState, ago, kindTone, parsePalette, bigDigits, batteryCells, BATTERY, scramble, roomPicks, deviceFacts, airpodsFacts, markIcon, kindPixel, pixelFor, PIXEL_FONT, pixelText, roomToneHex, bigDigits: bigDigits, hoverRows, alertNote, alertStep, airpodsPutAway, keepTogether, revealLine, escapeHtml, airpodsArrival, ARRIVAL_QUIET_S, airpodsCardReady, airpodsCardParts, airpodsCardLine, airpodsPreview }")()
 
 const cabled = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 77, charging: true, status: "charging", connection: "usb" }
 const wireless = { id: "glorious:2022", name: "Glorious Model O Wireless", kind: "mouse", level: 76, charging: false, status: "discharging", connection: "wireless" }
@@ -673,3 +673,34 @@ console.log("model tests passed")
   assert.strictEqual(podsStep(walked, t0 + 60).action, "wait")
 }
 console.log("alert tests passed")
+
+// The AirPods card: AirPods that connect, or a lid that opens, once.
+{
+  const off = { name: "AirPods Pro", connected: false, lidOpen: false }
+  const on = Object.assign({}, off, { connected: true })
+  const lid = Object.assign({}, off, { lidOpen: true })
+  const now = 1000000
+  assert.strictEqual(Model.airpodsArrival(off, on, now, 0), "connected")
+  assert.strictEqual(Model.airpodsArrival(off, lid, now, 0), "opened")
+  // Connected, then the lid: one card.
+  assert.strictEqual(Model.airpodsArrival(lid, Object.assign({}, lid, { connected: true }), now, now - 2), "")
+  assert.strictEqual(Model.airpodsArrival(off, on, now, now - Model.ARRIVAL_QUIET_S), "connected")
+  // Already connected at start, or when the daemon comes back: quiet.
+  assert.strictEqual(Model.airpodsArrival(null, on, now, 0), "")
+  assert.strictEqual(Model.airpodsArrival(on, on, now, 0), "")
+  assert.strictEqual(Model.airpodsArrival(on, off, now, 0), "")
+  assert.strictEqual(Model.airpodsArrival(lid, lid, now, 0), "")
+
+  // Ready once a part answers with a level.
+  assert.strictEqual(Model.airpodsCardReady(null), false)
+  assert.strictEqual(Model.airpodsCardReady({ left: null, right: null, "case": null }), false)
+  assert.strictEqual(Model.airpodsCardReady({ left: { level: 40, stale: true } }), false)
+  assert.strictEqual(Model.airpodsCardReady({ left: { level: 40, stale: false } }), true)
+
+  assert.deepStrictEqual(Model.airpodsCardParts({ isHeadset: false }).map(p => p.key), ["left", "right", "case"])
+  assert.deepStrictEqual(Model.airpodsCardParts({ isHeadset: true }).map(p => p.key), ["headset"])
+
+  assert.strictEqual(Model.airpodsCardLine({ connected: false, known: false }, "opened"), "Case open · connecting")
+  assert.strictEqual(Model.airpodsCardLine(Model.airpodsPreview(now), "connected"), "Connected · in both ears")
+  assert.strictEqual(Model.airpodsCardReady(Model.airpodsPreview(now)), true)
+}

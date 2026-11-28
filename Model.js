@@ -418,6 +418,62 @@ function podPartState(key, pod, nowSec) {
   return pod.inEar ? "in ear" : "out"
 }
 
+// ------------------------------------------------------- the AirPods card
+
+// The card that drops in at the top of the screen when AirPods arrive: they
+// connect, or librepods hears the case's lid open in its broadcast. `prev`
+// and `next` are the reader's AirPods (bin/batteries), before any last-known
+// levels. Never on the first reading after a start, or when the daemon comes
+// back, so AirPods already connected stay quiet; and not again within
+// ARRIVAL_QUIET_S of the last card, since an opened lid is usually followed
+// by the connection a second later.
+var ARRIVAL_QUIET_S = 20
+
+function airpodsArrival(prev, next, nowSec, lastSec) {
+  if (!prev || !next) return ""
+  if ((nowSec || 0) - (lastSec || 0) < ARRIVAL_QUIET_S) return ""
+  if (next.connected === true && prev.connected !== true) return "connected"
+  if (next.lidOpen === true && prev.lidOpen !== true) return "opened"
+  return ""
+}
+
+// Whether the card has a level to show yet: a connection lands a moment
+// before the buds say how full they are.
+function airpodsCardReady(pods) {
+  if (!pods) return false
+  return POD_PARTS.some(function(k) { return pods[k] && !pods[k].stale && hasLevel(pods[k].level) })
+}
+
+// The card's rooms: a bud each, drawn alone, and the case, or a Max's one
+// battery.
+function airpodsCardParts(pods) {
+  if (pods && pods.isHeadset) return [{ key: "headset", label: "Headset", icon: "headphone" }]
+  return [
+    { key: "left", label: "Left", icon: "airpod-left" },
+    { key: "right", label: "Right", icon: "airpod-right" },
+    { key: "case", label: "Case", icon: "airpods-case" }
+  ]
+}
+
+// The card's prompt line.
+function airpodsCardLine(pods, reason) {
+  if (!pods) return ""
+  if (!pods.connected && reason === "opened") return "Case open · connecting"
+  return airpodsStatus(pods)
+}
+
+// What `previewAirpods` shows when no AirPods are connected.
+function airpodsPreview(nowSec) {
+  var at = Math.round(nowSec || Date.now() / 1000)
+  return {
+    name: "AirPods Pro", model: "AirPods Pro 2 (USB-C)", connected: true, isHeadset: false, isPro: true,
+    left: { level: 82, charging: false, inEar: true, stale: false, seenAt: at },
+    right: { level: 79, charging: false, inEar: true, stale: false, seenAt: at },
+    "case": { level: 64, charging: true, stale: false, seenAt: at },
+    headset: null, level: 79, charging: false, known: true, stale: false
+  }
+}
+
 // ----------------------------------------------------- the panel's caption
 
 // The caption under the panel's title changes the way Omarchy's own panels do:

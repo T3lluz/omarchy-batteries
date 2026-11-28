@@ -743,7 +743,14 @@ def parse_librepods(text: str) -> dict | None:
         "level": level,
         "charging": charging,
         "known": level is not None or parts["case"] is not None,
+        # The lid as the case last broadcast it: 0 open, 1 shut, 2 unknown.
+        # The panel's AirPods card drops in when it opens.
+        "lidOpen": _lid_open(s.get("lid_state")),
     }
+
+
+def _lid_open(lid) -> bool:
+    return isinstance(lid, int) and not isinstance(lid, bool) and lid == 0
 
 
 def airpods(path: str = LIBREPODS_STATE) -> dict | None:

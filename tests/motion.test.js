@@ -101,6 +101,6 @@ assert.strictEqual(Motion.frameAt("nothing", 10), -1)
 for (const name of ["laptop", "mouse", "keyboard", "headphone", "volume-2", "gamepad", "hand", "tablet", "pencil",
   "smartphone", "music", "tv", "power", "battery", "battery-low", "battery-medium", "battery-full", "zap", "plug",
   "reload", "settings-cog", "arrow-left", "key", "warning-diamond", "layout", "bell", "percent", "clock", "download",
-  "check", "airpods", "airpods-case"]) assert.ok(Motion.has(name), name + " acts")
+  "check", "airpods", "airpods-case", "airpod-left", "airpod-right"]) assert.ok(Motion.has(name), name + " acts")
 
 console.log("motion tests passed")
